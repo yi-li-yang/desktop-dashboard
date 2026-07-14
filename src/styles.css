@@ -1,0 +1,161 @@
+/* Frosted-glass widget. The OS window is transparent; native Acrylic blur is
+   applied behind it, so the page background stays mostly transparent. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+html,
+body {
+  background: transparent;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  color: #f0f0f0;
+  font-size: 13px;
+}
+
+:root {
+  --bar-green: #4cc38a;
+  --bar-amber: #e6b450;
+  --bar-red: #e5534b;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(24, 24, 30, 0.45); /* tint over acrylic; fallback if no blur */
+  padding: 10px 14px 8px;
+  overflow: hidden;
+}
+
+/* Header */
+#widget-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  cursor: grab;
+}
+
+#widget-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+#widget-plan {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+#widget-plan:empty {
+  display: none;
+}
+
+#widget-buttons {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#widget:hover #widget-buttons {
+  opacity: 1;
+}
+
+#widget-buttons button {
+  all: unset;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  line-height: 20px;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+#widget-buttons button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+#btn-close:hover {
+  background: rgba(229, 83, 75, 0.8) !important;
+}
+
+/* Cards */
+#cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-row {
+  padding: 2px 0;
+}
+
+.usage-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.usage-name {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.usage-remaining {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.usage-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.usage-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.usage-reset {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.card-error {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 0;
+}
+
+/* Footer */
+#widget-status {
+  padding-top: 6px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+#widget-status.stale {
+  color: var(--bar-amber);
+}

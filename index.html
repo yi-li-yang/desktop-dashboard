@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop Dashboard</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="widget">
+      <header id="widget-header" data-tauri-drag-region>
+        <span id="widget-title" data-tauri-drag-region>Claude</span>
+        <span id="widget-plan" data-tauri-drag-region></span>
+        <div id="widget-buttons">
+          <button id="btn-refresh" title="Refresh now">&#x21bb;</button>
+          <button id="btn-close" title="Close">&#x2715;</button>
+        </div>
+      </header>
+      <main id="cards"></main>
+      <footer id="widget-status" data-tauri-drag-region></footer>
+    </div>
+  </body>
+</html>
