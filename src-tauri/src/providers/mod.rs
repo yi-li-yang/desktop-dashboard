@@ -1,4 +1,6 @@
 pub mod claude_usage;
+pub mod octopus_agile;
+pub mod prepaid_ledger;
 
 use std::time::Duration;
 
@@ -43,5 +45,8 @@ pub trait StatProvider: Send + Sync {
 }
 
 pub fn all() -> Vec<Box<dyn StatProvider>> {
-    vec![Box::new(claude_usage::ClaudeUsageProvider::new())]
+    vec![
+        Box::new(claude_usage::ClaudeUsageProvider::new()),
+        Box::new(octopus_agile::OctopusAgileProvider::new()),
+    ]
 }

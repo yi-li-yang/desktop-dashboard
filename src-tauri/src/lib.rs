@@ -113,6 +113,37 @@ fn refresh_now(state: tauri::State<Dashboard>, provider_id: Option<String>) {
     }
 }
 
+#[tauri::command]
+fn resize_window(app: tauri::AppHandle, height: f64) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_size(tauri::LogicalSize::new(340.0, height.max(80.0)));
+    }
+}
+
+#[tauri::command]
+fn get_budget(app: tauri::AppHandle) -> Option<f64> {
+    state::load(&app).monthly_budget
+}
+
+#[tauri::command]
+fn set_budget(app: tauri::AppHandle, budget: Option<f64>) {
+    let mut settings = state::load(&app);
+    settings.monthly_budget = budget;
+    state::save(&app, &settings);
+}
+
+#[tauri::command]
+fn get_layout(app: tauri::AppHandle) -> state::Layout {
+    state::load(&app).layout
+}
+
+#[tauri::command]
+fn set_layout(app: tauri::AppHandle, layout: state::Layout) {
+    let mut settings = state::load(&app);
+    settings.layout = layout;
+    state::save(&app, &settings);
+}
+
 fn restore_position(app: &tauri::AppHandle) {
     let settings = state::load(app);
     if let (Some(x), Some(y)) = (settings.window_x, settings.window_y) {
@@ -130,7 +161,13 @@ fn watch_position(app: &tauri::AppHandle) {
     };
     let generation = Arc::new(AtomicU64::new(0));
     let app_handle = app.clone();
+    let zoom_win = win.clone();
     win.on_window_event(move |event| {
+        // WebView2 can silently multiply its zoom factor on monitor DPI/scale
+        // events (display sleep/wake, docking); pin it back to 1.0.
+        if let tauri::WindowEvent::ScaleFactorChanged { .. } = event {
+            let _ = zoom_win.set_zoom(1.0);
+        }
         if let tauri::WindowEvent::Moved(pos) = event {
             let my_gen = generation.fetch_add(1, Ordering::SeqCst) + 1;
             let generation = generation.clone();
@@ -156,13 +193,30 @@ pub fn run() {
             latest: Mutex::new(HashMap::new()),
             refresh: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![get_stats, refresh_now])
+        .invoke_handler(tauri::generate_handler![
+            get_stats,
+            refresh_now,
+            resize_window,
+            get_budget,
+            set_budget,
+            get_layout,
+            set_layout
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             restore_position(&handle);
             watch_position(&handle);
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
+                // Watchdog: WebView2 sometimes drifts its zoom factor on DPI
+                // events that never reach us as ScaleFactorChanged.
+                let zoom_win = win.clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let _ = zoom_win.set_zoom(1.0);
+                        tokio::time::sleep(Duration::from_secs(60)).await;
+                    }
+                });
             }
 
             for provider in providers::all() {

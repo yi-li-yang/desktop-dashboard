@@ -11,7 +11,8 @@
 html,
 body {
   background: transparent;
-  height: 100%;
+  height: auto;
+  min-height: 0;
   overflow: hidden;
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   color: #f0f0f0;
@@ -27,11 +28,12 @@ body {
 #widget {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
+  min-height: 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(24, 24, 30, 0.45); /* tint over acrylic; fallback if no blur */
-  padding: 10px 14px 8px;
+  padding: 10px 14px 10px;
   overflow: hidden;
 }
 
@@ -42,25 +44,6 @@ body {
   gap: 8px;
   padding-bottom: 8px;
   cursor: grab;
-}
-
-#widget-title {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-#widget-plan {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
-  padding: 1px 7px;
-  border-radius: 8px;
-}
-
-#widget-plan:empty {
-  display: none;
 }
 
 #widget-buttons {
@@ -101,7 +84,75 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+
+/* Every card is its own boxed panel, so unrelated blocks stay visually
+   isolated from each other. Renderers fill the box; they don't draw their own
+   outer border or background. */
+.card {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Title row (added by card-frame.ts): click to collapse/expand, drag to reorder. */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.card-chevron {
+  width: 10px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  transition: transform 0.15s ease;
+}
+
+.card.collapsed .card-chevron {
+  transform: rotate(-90deg);
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.card-meta {
+  margin-left: auto;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+.card-meta:empty {
+  display: none;
+}
+
+.card-body {
+  margin-top: 6px;
+}
+
+.card.collapsed .card-body {
+  display: none;
+}
+
+/* Being dragged: lifted, with the grabbing cursor everywhere on the row. */
+.card.dragging {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.card.dragging .card-head {
+  cursor: grabbing;
 }
 
 .usage-row {
@@ -140,6 +191,370 @@ body {
   margin-top: 2px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.45);
+}
+
+.usage-reset-time {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10.5px;
+}
+
+.usage-ready {
+  color: rgba(76, 195, 138, 0.85);
+  font-size: 11px;
+}
+
+/* 7-Day Usage Breakdown */
+.breakdown-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+  margin-bottom: 4px;
+}
+
+.breakdown-chip {
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.breakdown-chip b {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+/* Spending & Extra Usage */
+.spending-section {
+  margin-top: 6px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.spending-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.spending-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spending-title {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.spending-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.spending-spent {
+  color: #fff;
+  font-weight: 600;
+}
+
+.spending-limit {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.spending-limit.clickable-budget {
+  cursor: pointer;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.4);
+}
+
+.spending-limit.clickable-budget:hover {
+  color: #fff;
+}
+
+.btn-set-budget {
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
+  color: rgba(76, 195, 138, 0.95);
+  background: rgba(76, 195, 138, 0.12);
+  border: 1px solid rgba(76, 195, 138, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-set-budget:hover {
+  background: rgba(76, 195, 138, 0.25);
+  color: #fff;
+}
+
+.spending-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.spending-balance {
+  color: rgba(76, 195, 138, 0.9);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.spending-uncapped-text {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+}
+
+.spending-reset {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spending-status-muted {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.spending-badge {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-uncapped {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.badge-warning {
+  background: rgba(230, 180, 80, 0.2);
+  color: var(--bar-amber);
+  border: 1px solid rgba(230, 180, 80, 0.4);
+}
+
+.badge-limit {
+  background: rgba(229, 83, 75, 0.25);
+  color: var(--bar-red);
+  border: 1px solid rgba(229, 83, 75, 0.5);
+  animation: pulse-limit 2s infinite ease-in-out;
+}
+
+@keyframes pulse-limit {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.spending-section.limit-reached .spending-balance {
+  color: var(--bar-red);
+}
+
+.prepaid-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prepaid-line + .prepaid-line {
+  margin-top: 2px;
+}
+
+.prepaid-paid .prepaid-amount b {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.prepaid-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.prepaid-amount {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.prepaid-amount b {
+  color: rgba(76, 195, 138, 0.95);
+  font-weight: 600;
+}
+
+.prepaid-total {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+}
+
+/* Octopus Agile card */
+.agile-now {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.agile-price {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.agile-price small {
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: 2px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.agile-price.low,
+.agile-price.neg {
+  color: var(--bar-green);
+}
+
+.agile-cue {
+  font-size: 11px;
+}
+
+.cue-low {
+  color: var(--bar-green);
+}
+
+.cue-high {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.agile-until {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 4px;
+}
+
+.agile-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.badge-paid {
+  background: rgba(76, 195, 138, 0.25);
+  color: var(--bar-green);
+  border: 1px solid rgba(76, 195, 138, 0.6);
+}
+
+.agile-chart-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.agile-chart {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin-top: 2px;
+}
+
+.agile-bar.bar-high {
+  fill: rgba(255, 255, 255, 0.28);
+}
+
+.agile-bar.bar-low {
+  fill: var(--bar-green);
+}
+
+.agile-bar.bar-neg {
+  fill: #7dffc0;
+}
+
+.agile-bar.bar-past {
+  opacity: 0.4;
+}
+
+.agile-now-col {
+  fill: rgba(255, 255, 255, 0.22);
+}
+
+.agile-zero {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.agile-windows {
+  margin-top: 6px;
+}
+
+.agile-sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 2px;
+}
+
+.agile-window {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.agile-window-price {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.agile-window.cheapest .agile-window-price {
+  color: var(--bar-green);
+}
+
+.agile-window.live .agile-window-time {
+  color: var(--bar-green);
+}
+
+.agile-window em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--bar-green);
+}
+
+/* Negative price: glowing, gently pulsing card. */
+.card.negative-price {
+  background: linear-gradient(135deg, rgba(76, 195, 138, 0.18), rgba(76, 195, 138, 0.04));
+  box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.55), 0 0 14px rgba(76, 195, 138, 0.35);
+  animation: pulse-negative 2.4s infinite ease-in-out;
+}
+
+.card.negative-price .agile-badge {
+  animation: pulse-limit 2s infinite ease-in-out;
+}
+
+@keyframes pulse-negative {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.55), 0 0 10px rgba(76, 195, 138, 0.25); }
+  50% { box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.85), 0 0 20px rgba(76, 195, 138, 0.55); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.negative-price,
+  .card.negative-price .agile-badge {
+    animation: none;
+  }
 }
 
 .card-error {
