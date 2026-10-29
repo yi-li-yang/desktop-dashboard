@@ -193,6 +193,75 @@ body {
   color: rgba(255, 255, 255, 0.45);
 }
 
+/* "Spending now": readout from the latest poll-to-poll rise, plus a bar pulse. */
+.usage-rate {
+  color: var(--bar-amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-rate-local {
+  color: var(--bar-green);
+}
+
+.spending-balance .usage-rate,
+.spending-uncapped-text .usage-rate {
+  margin-left: 6px;
+}
+
+.usage-fill {
+  position: relative;
+  overflow: hidden;
+}
+
+/* While burning: the bar thickens and glows (static, so it also shows with
+   reduced motion); with motion allowed the fill breathes and a bright band
+   sweeps across it. overflow is opened so the glow isn't clipped by the track. */
+.burning .usage-bar {
+  overflow: visible;
+  transform: scaleY(1.5);
+  transition: transform 0.3s ease;
+}
+
+.burning .usage-fill {
+  box-shadow: 0 0 5px 0 rgba(255, 255, 255, 0.18);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .burning .usage-fill {
+    animation: usage-breathe 2.8s ease-in-out infinite;
+  }
+
+  .burning .usage-fill::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 35%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: usage-sweep 2.4s ease-in-out infinite;
+  }
+
+  .burning .usage-rate {
+    animation: usage-blink 2.8s ease-in-out infinite;
+  }
+}
+
+@keyframes usage-breathe {
+  0%, 100% { filter: brightness(0.95); box-shadow: 0 0 3px 0 rgba(255, 255, 255, 0.08); }
+  50% { filter: brightness(1.15); box-shadow: 0 0 7px 1px rgba(255, 255, 255, 0.28); }
+}
+
+@keyframes usage-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@keyframes usage-blink {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
 .usage-reset-time {
   color: rgba(255, 255, 255, 0.35);
   font-size: 10.5px;

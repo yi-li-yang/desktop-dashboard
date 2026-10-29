@@ -1,3 +1,4 @@
+mod activity;
 mod providers;
 mod state;
 
@@ -113,6 +114,15 @@ fn refresh_now(state: tauri::State<Dashboard>, provider_id: Option<String>) {
     }
 }
 
+/// When Claude Code last wrote to a session log (unix ms), if ever.
+#[tauri::command]
+async fn claude_activity() -> Option<u64> {
+    tauri::async_runtime::spawn_blocking(activity::latest_claude_activity_ms)
+        .await
+        .ok()
+        .flatten()
+}
+
 #[tauri::command]
 fn resize_window(app: tauri::AppHandle, height: f64) {
     if let Some(win) = app.get_webview_window("main") {
@@ -196,6 +206,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_stats,
             refresh_now,
+            claude_activity,
             resize_window,
             get_budget,
             set_budget,

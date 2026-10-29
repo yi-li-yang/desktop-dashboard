@@ -56,6 +56,119 @@ export interface StatsPayload<T = ClaudeUsageData> {
   next_poll_secs: number;
 }
 
+// "Spending now" detection, from two cheap signals. Either one stays lit for
+// ACTIVE_MS after it was last seen, so the pulse stops 5 minutes after the
+// last activity:
+//  - usage rises between consecutive polls (60s apart, whole-percent steps),
+//    summed over the window for the "+N%" readout;
+//  - local Claude Code activity (session-log writes, see watchClaudeActivity),
+//    which lights the pulse even before the percentage ticks over.
+const ACTIVE_MS = 5 * 60_000;
+const RISE_EPSILON = { pct: 0.05, usd: 0.005 };
+
+interface Rise {
+  delta: number;
+  at: number;
+}
+
+interface Track {
+  value: number;
+  unit: "pct" | "usd";
+  rises: Rise[];
+}
+
+const tracks = new Map<string, Track>();
+let lastObservedAt = 0;
+
+function observe(key: string, value: number, at: number, unit: "pct" | "usd"): void {
+  const prev = tracks.get(key);
+  if (!prev) {
+    tracks.set(key, { value, unit, rises: [] });
+    return;
+  }
+  const delta = value - prev.value;
+  let rises = prev.rises.filter((r) => at - r.at < ACTIVE_MS);
+  if (delta > RISE_EPSILON[unit]) {
+    rises.push({ delta, at });
+  } else if (delta < 0) {
+    rises = []; // window reset: re-baseline
+  }
+  tracks.set(key, { value, unit, rises });
+}
+
+function observeAll(d: ClaudeUsageData, at: number): void {
+  if (at === lastObservedAt) return;
+  lastObservedAt = at;
+  const windows: [string, UsageWindow | null][] = [
+    ["Session (5h)", d.session],
+    ["Weekly", d.weekly],
+    ["Weekly · Sonnet", d.weekly_sonnet],
+    ["Weekly · Opus", d.weekly_opus],
+  ];
+  for (const [key, w] of windows) {
+    if (w) observe(key, w.utilization, at, "pct");
+  }
+  if (d.extra_usage?.is_enabled && d.extra_usage.used != null) {
+    observe("extra", d.extra_usage.used, at, "usd");
+  }
+}
+
+interface ActiveRise {
+  delta: number; // total over the window
+  at: number; // when the latest rise was seen
+  unit: "pct" | "usd";
+}
+
+function activeRise(key: string): ActiveRise | null {
+  const t = tracks.get(key);
+  const live = t?.rises.filter((r) => Date.now() - r.at < ACTIVE_MS) ?? [];
+  if (!t || live.length === 0) return null;
+  return { delta: live.reduce((sum, r) => sum + r.delta, 0), at: live[live.length - 1].at, unit: t.unit };
+}
+
+function rateHtml(r: ActiveRise, withSep: boolean): string {
+  const amount =
+    r.unit === "usd" ? `$${r.delta.toFixed(2)}` : `${Number(r.delta.toFixed(1))}%`;
+  return `<span class="usage-rate" data-rise-at="${r.at}">▲ +${amount} in last 5m${withSep ? " · " : ""}</span>`;
+}
+
+let localActiveAt: number | null = null;
+
+/** Lights the rows while Claude Code is writing session logs. DOM-only, so it never disturbs a render. */
+function applyLocalActivity(container: HTMLElement): void {
+  const active = localActiveAt != null && Date.now() - localActiveAt < ACTIVE_MS;
+  container.querySelectorAll<HTMLElement>(".usage-row").forEach((rowEl, i) => {
+    const hasRise = rowEl.querySelector(".usage-rate:not(.usage-rate-local)") !== null;
+    rowEl.classList.toggle("burning", active || hasRise);
+    if (i > 0) return;
+    // The first row carries the text readout when no numeric rise is shown.
+    const reset = rowEl.querySelector<HTMLElement>(".usage-reset");
+    if (!reset) return;
+    reset.querySelector(".usage-rate-local")?.remove();
+    if (active && !hasRise) {
+      const sep = reset.textContent?.trim() ? " · " : "";
+      reset.insertAdjacentHTML(
+        "afterbegin",
+        `<span class="usage-rate usage-rate-local">● Claude Code active${sep}</span>`,
+      );
+    }
+  });
+}
+
+/** Polls the backend for the newest Claude Code session-log write (a directory-metadata read, no network). */
+export function watchClaudeActivity(container: HTMLElement): void {
+  const poll = async () => {
+    try {
+      localActiveAt = await invoke<number | null>("claude_activity");
+    } catch {
+      /* keep the last value; it expires on its own */
+    }
+    applyLocalActivity(container);
+  };
+  void poll();
+  setInterval(poll, 10_000);
+}
+
 let savedBudget: number | null = null;
 let budgetLoaded = false;
 
@@ -128,8 +241,11 @@ function row(label: string, w: UsageWindow | null): string {
     resetHtml = `<span class="usage-ready">Ready · 100% available</span>`;
   }
 
+  const rise = activeRise(label);
+  if (rise) resetHtml = rateHtml(rise, !!resetHtml) + resetHtml;
+
   return `
-    <div class="usage-row" data-resets="${w.resets_at ?? ""}">
+    <div class="usage-row${rise ? " burning" : ""}" data-resets="${w.resets_at ?? ""}">
       <div class="usage-labels">
         <span class="usage-name">${label}</span>
         <span class="usage-remaining">${remaining.toFixed(0)}% left</span>
@@ -164,6 +280,9 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
   const spentFormatted = `$${spent.toFixed(2)}`;
   const effectiveLimit = eu.monthly_limit ?? savedBudget;
   const resetText = formatMonthlyReset(eu.resets_at);
+  const rise = activeRise("extra");
+  const rate = rise ? rateHtml(rise, false) : "";
+  const burning = rise ? " burning" : "";
 
   if (effectiveLimit != null && effectiveLimit > 0) {
     const limitFormatted = `$${effectiveLimit.toFixed(2)}`;
@@ -181,7 +300,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
     }
 
     return `
-      <div class="spending-section ${isLimitReached ? "limit-reached" : ""}">
+      <div class="spending-section ${isLimitReached ? "limit-reached" : ""}${burning}">
         <div class="spending-labels">
           <div class="spending-left">
             <span class="spending-title">Extra Spending</span>
@@ -196,7 +315,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
           <div class="usage-fill" style="width:${pct}%;background:${isLimitReached ? "var(--bar-red)" : barColor(pct)}"></div>
         </div>
         <div class="spending-footer">
-          <span class="spending-balance">${balanceFormatted} balance left</span>
+          <span class="spending-balance">${balanceFormatted} balance left${rate}</span>
           <span class="spending-reset">${resetText}</span>
         </div>
       </div>`;
@@ -204,7 +323,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
 
   // Enabled, but no monthly limit set on account
   return `
-    <div class="spending-section">
+    <div class="spending-section${burning}">
       <div class="spending-labels">
         <div class="spending-left">
           <span class="spending-title">Extra Spending</span>
@@ -216,7 +335,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
         </div>
       </div>
       <div class="spending-footer">
-        <span class="spending-uncapped-text">Pay-as-you-go</span>
+        <span class="spending-uncapped-text">Pay-as-you-go${rate}</span>
         <span class="spending-reset">${resetText}</span>
       </div>
     </div>`;
@@ -272,6 +391,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   }
 
   const d = payload.data!;
+  observeAll(d, payload.fetched_at);
 
   let html = row("Session (5h)", d.session);
   html += row("Weekly", d.weekly);
@@ -304,6 +424,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
+  applyLocalActivity(container);
 }
 
 /** Refreshes the ticking countdown texts without a new fetch. */
@@ -311,6 +432,17 @@ export function tickCountdowns(container: HTMLElement): void {
   container.querySelectorAll<HTMLElement>(".usage-row").forEach((rowEl) => {
     const resets = rowEl.dataset.resets || null;
     const el = rowEl.querySelector<HTMLElement>(".usage-reset");
-    if (el && resets) el.innerHTML = countdown(resets);
+    if (el && resets) {
+      const rate = el.querySelector<HTMLElement>(".usage-rate:not(.usage-rate-local)");
+      el.innerHTML = (rate ? rate.outerHTML : "") + countdown(resets);
+    }
   });
+
+  // Let the "spending now" pulse and readout fade once the last rise is stale.
+  container.querySelectorAll<HTMLElement>(".usage-rate:not(.usage-rate-local)").forEach((rate) => {
+    if (Date.now() - Number(rate.dataset.riseAt) < ACTIVE_MS) return;
+    rate.closest(".usage-row, .spending-section")?.classList.remove("burning");
+    rate.remove();
+  });
+  applyLocalActivity(container);
 }

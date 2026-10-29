@@ -3,7 +3,7 @@ use super::{ProviderError, StatProvider};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
@@ -13,11 +13,17 @@ const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 // The endpoint rate-limits unknown user agents aggressively; identify as Claude Code.
 const USER_AGENT: &str = "claude-code/2.0.14";
+// Usage is polled often so the spend indicator reacts quickly; the prepaid
+// balance moves rarely and costs two extra requests, so it refreshes slower
+// and the polls in between reuse the last result.
+const USAGE_POLL: Duration = Duration::from_secs(60);
+const PREPAID_REFRESH: Duration = Duration::from_secs(5 * 60);
 
 pub struct ClaudeUsageProvider {
     client: reqwest::Client,
     org_uuid: Mutex<Option<String>>,
     ledger: Mutex<Ledger>,
+    prepaid_cache: Mutex<Option<(Instant, Value)>>,
 }
 
 impl ClaudeUsageProvider {
@@ -26,6 +32,27 @@ impl ClaudeUsageProvider {
             client: reqwest::Client::new(),
             org_uuid: Mutex::new(None),
             ledger: Mutex::new(prepaid_ledger::load()),
+            prepaid_cache: Mutex::new(None),
+        }
+    }
+
+    /// Prepaid payload, refetched at most every PREPAID_REFRESH. A failed
+    /// refresh keeps serving the last good value rather than blanking the line.
+    async fn prepaid(&self, token: &str) -> Value {
+        let cached = self.prepaid_cache.lock().ok().and_then(|g| g.clone());
+        if let Some((at, v)) = &cached {
+            if at.elapsed() < PREPAID_REFRESH {
+                return v.clone();
+            }
+        }
+        match self.fetch_prepaid(token).await {
+            Some(v) => {
+                if let Ok(mut g) = self.prepaid_cache.lock() {
+                    *g = Some((Instant::now(), v.clone()));
+                }
+                v
+            }
+            None => cached.map(|(_, v)| v).unwrap_or(Value::Null),
         }
     }
 
@@ -414,7 +441,7 @@ impl StatProvider for ClaudeUsageProvider {
     }
 
     fn poll_interval(&self) -> Duration {
-        Duration::from_secs(5 * 60)
+        USAGE_POLL
     }
 
     async fn fetch(&self) -> Result<Value, ProviderError> {
@@ -436,7 +463,7 @@ impl StatProvider for ClaudeUsageProvider {
                     .await
                     .map_err(|e| ProviderError::Other(format!("Bad response: {e}")))?;
                 let mut data = normalize(&raw);
-                data["prepaid"] = self.fetch_prepaid(&token).await.unwrap_or(Value::Null);
+                data["prepaid"] = self.prepaid(&token).await;
                 if data["plan"].is_null() {
                     // The usage response doesn't always carry the plan; the
                     // credentials file does.

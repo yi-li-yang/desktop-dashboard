@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { renderClaudeUsage, tickCountdowns, loadBudget, type StatsPayload } from "./cards/claude-usage";
+import {
+  renderClaudeUsage,
+  tickCountdowns,
+  loadBudget,
+  watchClaudeActivity,
+  type StatsPayload,
+} from "./cards/claude-usage";
 import { renderOctopusAgile, tickAgile } from "./cards/octopus-agile";
 import { createFrame, readLayout, wireInteractions, type CardFrame, type Layout } from "./card-frame";
 
@@ -125,6 +131,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Create every box up front so on-screen order follows the saved layout, not
   // whichever provider answers first.
   await buildFrames();
+  watchClaudeActivity(frames["claude-usage"].body);
 
   for (const id of Object.keys(CARDS)) {
     await listen<AnyPayload>(`stats://${id}`, (e) => handlePayload(id, e.payload));
