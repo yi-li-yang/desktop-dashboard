@@ -1,5 +1,6 @@
 // Renders the Claude Code usage card: session + weekly quota bars with
-// reset countdowns, breakdown by activity, and extra usage spending & balance.
+// reset countdowns, breakdown by activity, extra usage spending & balance,
+// and the usage guard switch (claude-guard/).
 // Payloads come from the Rust `claude-usage` provider.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -164,6 +165,8 @@ export function watchClaudeActivity(container: HTMLElement): void {
       /* keep the last value; it expires on its own */
     }
     applyLocalActivity(container);
+    await loadGuard();
+    applyGuard(container);
   };
   void poll();
   setInterval(poll, 10_000);
@@ -181,6 +184,108 @@ export async function loadBudget(): Promise<void> {
     }
     budgetLoaded = true;
   }
+}
+
+// Usage guard (claude-guard/usage_guard.py): blocks new Claude Code prompts
+// once the session limit is used up and stops a running task after a small
+// overage cap. The backend reads its state file and writes its config file;
+// this row shows the state and lets the user switch it and change the cap.
+interface GuardConfig {
+  enabled: boolean;
+  cap_usd: number;
+  threshold: number;
+}
+
+interface GuardStatus {
+  reporting: boolean;
+  live?: boolean;
+  used_pct?: number | null;
+  resets_at?: number | null;
+  over?: boolean;
+  spill_usd?: number;
+  stopped?: boolean;
+}
+
+interface GuardSnapshot {
+  config: GuardConfig;
+  status: GuardStatus;
+}
+
+let guard: GuardSnapshot | null = null;
+
+export async function loadGuard(): Promise<void> {
+  try {
+    guard = await invoke<GuardSnapshot>("get_guard");
+  } catch {
+    /* keep the last snapshot */
+  }
+}
+
+function guardStatusText(g: GuardSnapshot): { text: string; tone: string } {
+  const { config: c, status: s } = g;
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const at = (secs: number | null | undefined) =>
+    secs ? new Date(secs * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "the reset";
+  if (!c.enabled) return { text: "Off · past the limit, new work runs on credits", tone: "off" };
+  if (!s.reporting) return { text: "Waiting for Claude Code's status line (see claude-guard)", tone: "off" };
+  if (s.stopped) {
+    return { text: `Stopped at ${money(s.spill_usd ?? 0)} past the limit · resumes after ${at(s.resets_at)}`, tone: "stopped" };
+  }
+  if (s.over) {
+    return { text: `Over limit · new prompts wait · spill ${money(s.spill_usd ?? 0)} / ${money(c.cap_usd)}`, tone: "over" };
+  }
+  return { text: "Standing by · new prompts wait once the session limit is hit", tone: "ok" };
+}
+
+function guardHtml(g: GuardSnapshot): string {
+  const { text, tone } = guardStatusText(g);
+  const on = g.config.enabled;
+  return `
+    <div class="spending-section guard-section guard-${tone}">
+      <div class="spending-labels">
+        <span class="spending-title">Usage guard</span>
+        <div class="spending-right">
+          <button class="guard-cap" title="Most usage credits a running task may spend after the session limit (click to change)">cap $${g.config.cap_usd.toFixed(2)}</button>
+          <button class="guard-toggle${on ? " on" : ""}" aria-pressed="${on}" title="Switch the usage guard ${on ? "off" : "on"}">${on ? "On" : "Off"}</button>
+        </div>
+      </div>
+      <div class="guard-status">${text}</div>
+    </div>`;
+}
+
+/** Fills the guard row from the last snapshot. DOM-only, so it never disturbs a render. */
+function applyGuard(container: HTMLElement): void {
+  const slot = container.querySelector<HTMLElement>(".guard-slot");
+  if (!slot) return;
+  if (!guard) {
+    slot.innerHTML = "";
+    return;
+  }
+  slot.innerHTML = guardHtml(guard);
+  const current = guard;
+  const save = async (enabled: boolean, capUsd: number) => {
+    try {
+      guard = await invoke<GuardSnapshot>("set_guard", { enabled, capUsd });
+    } catch (err) {
+      window.alert(String(err));
+    }
+    applyGuard(container);
+  };
+  slot.querySelector(".guard-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void save(!current.config.enabled, current.config.cap_usd);
+  });
+  slot.querySelector(".guard-cap")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const val = window.prompt(
+      "Most usage credits (USD) a running task may spend after the session limit before it is stopped:",
+      current.config.cap_usd.toFixed(2),
+    );
+    if (val === null) return;
+    const num = parseFloat(val.trim());
+    if (isNaN(num) || num < 0) return;
+    void save(current.config.enabled, num);
+  });
 }
 
 function barColor(utilization: number): string {
@@ -406,6 +511,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
     html += spendingHtml;
   }
   html += renderPrepaid(d.prepaid);
+  html += `<div class="guard-slot"></div>`;
 
   container.innerHTML = html || `<div class="card-error">No usage data returned</div>`;
 
@@ -425,6 +531,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
     });
   });
   applyLocalActivity(container);
+  applyGuard(container);
 }
 
 /** Refreshes the ticking countdown texts without a new fetch. */

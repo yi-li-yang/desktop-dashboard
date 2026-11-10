@@ -10,6 +10,7 @@ A lightweight, frosted-glass desktop widget (Tauri v2) made of independent boxes
 - Reads the OAuth token Claude Code stores in `~/.claude/.credentials.json` (login with `claude` first).
 - Polls the same endpoint that powers Claude Code's `/usage` (`GET https://api.anthropic.com/api/oauth/usage`) every 5 minutes, with exponential backoff on rate limits (the endpoint is undocumented and strict about polling).
 - Also shows today's (and, once published, tomorrow's) Octopus Agile half-hourly prices for region C (London; `REGION` in `octopus_agile.rs`) from the public Octopus API (no key): the current price, below-average windows, and a glowing "Paid to use" effect when the price is negative.
+- **Usage guard** row in the Claude box: switch the [Claude Code usage guard](claude-guard/README.md) on or off and set its overage cap. With it on, Claude Code stops starting new work once the 5-hour session limit is used up, and a task already running may spend at most the cap in usage credits before it is stopped. Needs the guard's hooks installed in Claude Code; it doesn't cover claude.ai or cloud sessions.
 - Every block is its own box with a title row. **Click the title to collapse** the box to just its title (click again to expand), and **drag the title up or down to reorder** the boxes. Order and collapsed state are saved in `settings.json` and restored on launch.
 - Frameless transparent window with Windows Acrylic blur; drag it anywhere by the header — position is remembered.
 

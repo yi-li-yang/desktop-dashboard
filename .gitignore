@@ -23,3 +23,5 @@ src-tauri/target_test/
 *.njsproj
 *.sln
 *.sw?
+
+__pycache__/

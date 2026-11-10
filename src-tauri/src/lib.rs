@@ -1,4 +1,5 @@
 mod activity;
+mod guard;
 mod providers;
 mod state;
 
@@ -123,6 +124,26 @@ async fn claude_activity() -> Option<u64> {
         .flatten()
 }
 
+/// Usage guard settings and state (see claude-guard/ and guard.rs).
+#[tauri::command]
+fn get_guard() -> Value {
+    guard::snapshot(now_ms() as f64 / 1000.0)
+}
+
+/// Switches the usage guard on or off and sets its overage cap in USD.
+#[tauri::command]
+fn set_guard(enabled: bool, cap_usd: f64) -> Result<Value, String> {
+    if !cap_usd.is_finite() || cap_usd < 0.0 {
+        return Err("Cap must be zero or more".into());
+    }
+    let dir = guard::guard_dir().ok_or("Could not locate home directory")?;
+    let mut cfg = guard::load_config(&dir);
+    cfg.enabled = enabled;
+    cfg.cap_usd = (cap_usd * 100.0).round() / 100.0;
+    guard::save_config(&dir, &cfg).map_err(|e| format!("Could not save guard settings: {e}"))?;
+    Ok(guard::snapshot(now_ms() as f64 / 1000.0))
+}
+
 #[tauri::command]
 fn resize_window(app: tauri::AppHandle, height: f64) {
     if let Some(win) = app.get_webview_window("main") {
@@ -207,6 +228,8 @@ pub fn run() {
             get_stats,
             refresh_now,
             claude_activity,
+            get_guard,
+            set_guard,
             resize_window,
             get_budget,
             set_budget,
