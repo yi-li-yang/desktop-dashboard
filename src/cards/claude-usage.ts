@@ -350,113 +350,31 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
     </div>`;
 }
 
-// ---- Usage settings panel
-// claude.ai's own usage page, shown in a child webview laid over a slot inside
-// the Claude box (see place_usage_panel in lib.rs). The dashboard only keeps the
-// native view on top of the slot as the layout moves; it never reads the page.
-
-/** Height of the panel's page area, in CSS pixels. */
-const PANEL_HEIGHT = 440;
-let panelOpen = false;
-let panelFrame = 0;
-let panelPlaced = "";
-let panelHost: { container: HTMLElement; payload: StatsPayload } | null = null;
+// ---- Usage settings
+// The amber pencil spots (the limit, "Extra Usage: Off", "Change limit") open
+// claude.ai's usage page in the browser. The dashboard never changes the account.
 
 function settingsButton(): string {
-  return panelOpen
-    ? `<button class="btn-usage-settings active" title="Close the usage settings">Close settings</button>`
-    : `<button class="btn-usage-settings" title="Open claude.ai usage settings here: switch usage credits on or off and set the monthly limit"><span class="edit-pencil">✎</span> Change limit</button>`;
+  return `<button class="btn-usage-settings" title="Open claude.ai usage settings: switch usage credits on or off and set the monthly limit"><span class="edit-pencil">✎</span> Change limit</button>`;
 }
 
-function renderUsagePanel(): string {
-  if (!panelOpen) return "";
-  return `
-    <div class="usage-panel">
-      <div class="usage-panel-hint"><span class="usage-panel-arrow">▾</span> Change <b>Adjust limit</b> on claude.ai below</div>
-      <div class="usage-panel-slot" style="height:${PANEL_HEIGHT}px"><span>Loading claude.ai…</span></div>
-      <div class="usage-panel-foot">
-        <button class="usage-panel-browser" title="Open the same page in your browser instead">Open in browser</button>
-        <button class="usage-panel-done">Done</button>
-      </div>
-    </div>`;
-}
-
-/** Keeps the native page on top of the slot every frame while the panel is open. */
-function syncPanel(): void {
-  panelFrame = 0;
-  if (!panelOpen) return;
-  const slot = document.querySelector<HTMLElement>(".usage-panel-slot");
-  const card = slot?.closest<HTMLElement>(".card");
-  // Hidden while any box is dragged (a native view would cover it), while the
-  // Claude box is collapsed, and while the slot isn't laid out.
-  const hide =
-    !slot ||
-    !!document.querySelector(".card.dragging") ||
-    !!card?.classList.contains("collapsed") ||
-    !!card?.hidden ||
-    slot.offsetParent === null;
-  const r = slot?.getBoundingClientRect();
-  const key = hide || !r ? "hidden" : `${r.left},${r.top},${r.width},${r.height}`;
-  if (key !== panelPlaced) {
-    panelPlaced = key;
-    invoke("place_usage_panel", {
-      x: r?.left ?? 0,
-      y: r?.top ?? 0,
-      width: r?.width ?? 1,
-      height: r?.height ?? 1,
-      visible: !hide && !!r,
-    }).catch(panelFailed);
-  }
-  panelFrame = requestAnimationFrame(syncPanel);
-}
-
-function rerenderHost(): void {
-  if (panelHost) renderClaudeUsage(panelHost.container, panelHost.payload);
-}
-
-function openPanel(): void {
-  panelOpen = true;
-  panelPlaced = "";
-  rerenderHost();
-  if (!panelFrame) panelFrame = requestAnimationFrame(syncPanel);
-}
-
-function closePanel(): void {
-  if (!panelOpen) return;
-  panelOpen = false;
-  panelPlaced = "";
-  if (panelFrame) cancelAnimationFrame(panelFrame);
-  panelFrame = 0;
-  invoke("close_usage_panel").catch(() => {});
-  rerenderHost();
-  // Read the account again, so the box shows the new limit.
-  invoke("refresh_now", { providerId: "claude-usage" }).catch(() => {});
-}
-
-/** The page couldn't be shown inside the box: fall back to the browser. */
-function panelFailed(err: unknown): void {
-  console.error("usage panel:", err);
-  closePanel();
-  invoke("open_usage_settings").catch((e) => window.alert(String(e)));
-}
-
-function wireUsageSettings(container: HTMLElement, payload: StatsPayload): void {
-  panelHost = { container, payload };
-  const toggle = (e: Event) => {
+function wireUsageSettings(container: HTMLElement): void {
+  const open = async (e: Event) => {
     e.stopPropagation();
-    if (panelOpen) closePanel();
-    else openPanel();
+    try {
+      await invoke("open_usage_settings");
+    } catch (err) {
+      window.alert(String(err));
+      return;
+    }
+    // Re-read the account as soon as the user comes back from the browser.
+    window.addEventListener(
+      "focus",
+      () => void invoke("refresh_now", { providerId: "claude-usage" }),
+      { once: true },
+    );
   };
-  container.querySelectorAll(".btn-usage-settings, .edit-limit").forEach((el) => el.addEventListener("click", toggle));
-  container.querySelector(".usage-panel-done")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closePanel();
-  });
-  container.querySelector(".usage-panel-browser")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    closePanel();
-    invoke("open_usage_settings").catch((err) => window.alert(String(err)));
-  });
+  container.querySelectorAll(".btn-usage-settings, .edit-limit").forEach((el) => el.addEventListener("click", open));
 }
 
 function renderPrepaid(p: PrepaidData | null | undefined): string {
@@ -522,7 +440,6 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   const spendingHtml = renderExtraUsage(d.extra_usage);
   if (spendingHtml) {
     html += spendingHtml;
-    html += renderUsagePanel();
   }
   html += renderPrepaid(d.prepaid);
 
@@ -543,7 +460,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
-  wireUsageSettings(container, payload);
+  wireUsageSettings(container);
   applyLocalActivity(container);
 }
 

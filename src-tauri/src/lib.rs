@@ -13,8 +13,6 @@ use tokio::sync::Notify;
 
 /// Where usage credits are switched on or off and the monthly spend limit is set.
 const USAGE_SETTINGS_URL: &str = "https://claude.ai/settings/usage";
-/// Label of the child webview that shows that page inside the Claude box.
-const USAGE_PANEL: &str = "usage-settings";
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 const ERROR_BACKOFF_START: Duration = Duration::from_secs(60);
 
@@ -164,59 +162,6 @@ fn open_usage_settings() -> Result<(), String> {
         .map_err(|e| format!("Could not open {USAGE_SETTINGS_URL}: {e}"))
 }
 
-/// Only claude.ai pages may load in the usage panel; anything else is blocked.
-fn is_claude_ai(url: &tauri::Url) -> bool {
-    url.scheme() == "https"
-        && url
-            .host_str()
-            .is_some_and(|h| h == "claude.ai" || h.ends_with(".claude.ai"))
-}
-
-/// Shows claude.ai's usage settings in a child webview laid over the slot the
-/// Claude box keeps for it (logical pixels, relative to the window), creating
-/// it on first use. The page is claude.ai's own: you sign in and change the
-/// limit there, and the dashboard never reads or changes the account. Remote
-/// pages get no access to the app's commands (capabilities cover local
-/// content only). Async because creating a webview from a sync command
-/// deadlocks on Windows.
-#[tauri::command]
-async fn place_usage_panel(
-    app: tauri::AppHandle,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    visible: bool,
-) -> Result<(), String> {
-    let pos = tauri::LogicalPosition::new(x, y);
-    let size = tauri::LogicalSize::new(width.max(1.0), height.max(1.0));
-    if let Some(panel) = app.get_webview(USAGE_PANEL) {
-        panel.set_position(pos).map_err(|e| e.to_string())?;
-        panel.set_size(size).map_err(|e| e.to_string())?;
-        let shown = if visible { panel.show() } else { panel.hide() };
-        return shown.map_err(|e| e.to_string());
-    }
-    if !visible {
-        return Ok(());
-    }
-    let window = app.get_window("main").ok_or("The main window is gone")?;
-    let url = tauri::Url::parse(USAGE_SETTINGS_URL).map_err(|e| e.to_string())?;
-    let builder = tauri::webview::WebviewBuilder::new(USAGE_PANEL, tauri::WebviewUrl::External(url))
-        .on_navigation(is_claude_ai);
-    window.add_child(builder, pos, size).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Closes the usage panel. The sign-in stays in the app's webview storage, so
-/// the next open loads the page fresh without signing in again.
-#[tauri::command]
-async fn close_usage_panel(app: tauri::AppHandle) -> Result<(), String> {
-    match app.get_webview(USAGE_PANEL) {
-        Some(panel) => panel.close().map_err(|e| e.to_string()),
-        None => Ok(()),
-    }
-}
-
 #[tauri::command]
 fn get_layout(app: tauri::AppHandle) -> state::Layout {
     state::load(&app).layout
@@ -286,8 +231,6 @@ pub fn run() {
             get_budget,
             set_budget,
             open_usage_settings,
-            place_usage_panel,
-            close_usage_panel,
             get_layout,
             set_layout
         ])
