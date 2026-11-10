@@ -10,7 +10,7 @@ A lightweight, frosted-glass desktop widget (Tauri v2) made of independent boxes
 - Reads the OAuth token Claude Code stores in `~/.claude/.credentials.json` (login with `claude` first).
 - Polls the same endpoint that powers Claude Code's `/usage` (`GET https://api.anthropic.com/api/oauth/usage`) every 5 minutes, with exponential backoff on rate limits (the endpoint is undocumented and strict about polling).
 - Also shows today's (and, once published, tomorrow's) Octopus Agile half-hourly prices for region C (London; `REGION` in `octopus_agile.rs`) from the public Octopus API (no key): the current price, below-average windows, and a glowing "Paid to use" effect when the price is negative.
-- The Claude box's **Extra Spending** row shows this month's usage credit spend, also while credits are off, and a **Usage settings** button (see below).
+- The Claude box's **Extra Spending** row shows this month's usage credit spend, also while credits are off, and opens claude.ai's usage settings right inside the box (see below).
 - Every block is its own box with a title row. **Click the title to collapse** the box to just its title (click again to expand), and **drag the title up or down to reorder** the boxes. Order and collapsed state are saved in `settings.json` and restored on launch.
 - Frameless transparent window with Windows Acrylic blur; drag it anywhere by the header — position is remembered.
 
@@ -19,12 +19,19 @@ A lightweight, frosted-glass desktop widget (Tauri v2) made of independent boxes
 Keep usage credits **off** by default: past the plan's session or weekly limit,
 Claude waits for the reset instead of spending the balance, on every surface
 (claude.ai, the Claude apps, Claude Duet, Claude Code). When a run is worth
-pushing through, read this month's spend in the Extra Spending row, click
-**Usage settings**, switch credits on and type the monthly limit you want under
-Adjust limit (for example this month's spend plus the most you'll allow).
-Anthropic stops the spend at that limit. The box re-reads the account when you
-come back. The dashboard only reads the account and never changes it, because
-there is no public interface for that.
+pushing through, read this month's spend in the Extra Spending row, then click
+**✎ Change limit** (or the limit itself, or "Extra Usage: Off"). claude.ai's
+usage page opens inside the Claude box: switch credits on and type the monthly
+limit you want under Adjust limit (for example this month's spend plus the most
+you'll allow). Click **Done** and the box reads the account again. Anthropic
+stops the spend at that limit.
+
+The page is claude.ai's own, in a child webview laid over the box (Tauri's
+`unstable` multi-webview feature): sign in to claude.ai there once and the
+sign-in is kept. Only claude.ai pages load in it, and it has no access to the
+app's commands. The dashboard itself only reads the account and never changes
+it, because there is no public interface for that. **Open in browser** opens the
+same page in your browser instead.
 
 ## Develop
 
