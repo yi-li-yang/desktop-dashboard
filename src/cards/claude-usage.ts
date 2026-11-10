@@ -1,10 +1,10 @@
 // Renders the Claude Code usage card: session + weekly quota bars with
 // reset countdowns, breakdown by activity, extra usage spending & balance,
-// and the spend fuse (see fuse.ts).
+// and the usage credits switch (see credits-switch.ts).
 // Payloads come from the Rust `claude-usage` provider.
 
 import { invoke } from "@tauri-apps/api/core";
-import { DEFAULT_FUSE_USD, fuseView } from "./fuse";
+import { DEFAULT_ALLOWANCE_USD, creditsView } from "./credits-switch";
 
 export interface UsageWindow {
   utilization: number;
@@ -185,66 +185,68 @@ export async function loadBudget(): Promise<void> {
   }
 }
 
-let fuseUsd = DEFAULT_FUSE_USD;
+let allowanceUsd = DEFAULT_ALLOWANCE_USD;
 
-export async function loadFuse(): Promise<void> {
+export async function loadAllowance(): Promise<void> {
   try {
-    const saved = await invoke<number | null>("get_fuse");
-    if (saved != null && saved > 0) fuseUsd = saved;
+    const saved = await invoke<number | null>("get_allowance");
+    if (saved != null && saved > 0) allowanceUsd = saved;
   } catch {
     /* keep the default */
   }
 }
 
-function renderFuse(eu: ExtraUsageData | null | undefined): string {
-  const v = fuseView(eu, fuseUsd);
+function renderCreditsSwitch(eu: ExtraUsageData | null | undefined): string {
+  const v = creditsView(eu, allowanceUsd);
   if (!v) return "";
-  const fuse = `$${fuseUsd.toFixed(2)}`;
-  const action =
-    v.target != null
-      ? `<button class="fuse-action" data-target="${v.target.toFixed(2)}" title="Copies the amount and opens claude.ai usage settings, where Adjust limit takes it">Set limit to $${v.target.toFixed(2)}</button>`
-      : "";
+  const act = v.action;
+  const button = act
+    ? `<button class="credits-action" data-target="${act.target != null ? act.target.toFixed(2) : ""}" title="Opens claude.ai usage settings${act.target != null ? ` with $${act.target.toFixed(2)} copied for Adjust limit` : ""}">${act.label}</button>`
+    : "";
   return `
-    <div class="spending-section fuse-section fuse-${v.tone}">
+    <div class="spending-section credits-section credits-${v.tone}">
       <div class="spending-labels">
         <div class="spending-left">
-          <span class="spending-title">Spend fuse</span>
-          <span class="fuse-state">${v.label}</span>
+          <span class="spending-title">Usage credits</span>
+          <span class="credits-state">${v.label}</span>
         </div>
         <div class="spending-right">
-          <button class="fuse-size" title="Most one run may spend past your plan's limits (click to change)">${fuse} per run</button>
+          <button class="credits-allowance" title="How much credits may spend each time you turn them on (click to change)">$${allowanceUsd.toFixed(2)} a time</button>
         </div>
       </div>
-      <div class="fuse-detail">${v.detail}</div>
-      ${action}
+      <div class="credits-detail">${v.detail}</div>
+      ${button}
     </div>`;
 }
 
-function wireFuse(container: HTMLElement, payload: StatsPayload): void {
-  container.querySelector(".fuse-size")?.addEventListener("click", async (e) => {
+function wireCreditsSwitch(container: HTMLElement, payload: StatsPayload): void {
+  container.querySelector(".credits-allowance")?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    const val = window.prompt("Most a single run may spend past your plan's limits (USD):", fuseUsd.toFixed(2));
+    const val = window.prompt("How much usage credits may spend each time you turn them on (USD):", allowanceUsd.toFixed(2));
     if (val === null) return;
     const num = parseFloat(val.trim());
     if (isNaN(num) || num <= 0) return;
     try {
-      await invoke("set_fuse", { fuse: num });
-      fuseUsd = Math.round(num * 100) / 100;
+      await invoke("set_allowance", { allowance: num });
+      allowanceUsd = Math.round(num * 100) / 100;
     } catch (err) {
       window.alert(String(err));
     }
     renderClaudeUsage(container, payload);
   });
-  const btn = container.querySelector<HTMLButtonElement>(".fuse-action");
+  const btn = container.querySelector<HTMLButtonElement>(".credits-action");
   btn?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const target = btn.dataset.target ?? "";
+    const turningOn = payload.data?.extra_usage?.is_enabled === false;
     let copied = false;
-    try {
-      await navigator.clipboard.writeText(target);
-      copied = true;
-    } catch {
-      /* clipboard unavailable: the amount is still shown on the button */
+    if (target) {
+      try {
+        await navigator.clipboard.writeText(target);
+        copied = true;
+      } catch {
+        /* clipboard unavailable: the amount is still shown below */
+      }
     }
     try {
       await invoke("open_usage_settings");
@@ -252,10 +254,15 @@ function wireFuse(container: HTMLElement, payload: StatsPayload): void {
       window.alert(String(err));
       return;
     }
-    btn.textContent = copied
-      ? `$${target} copied · paste it in Adjust limit`
-      : `Type $${target} in Adjust limit`;
-    // Re-read the limit as soon as the user comes back from the browser.
+    const step = turningOn ? "turn credits on, then " : "";
+    btn.textContent = !target
+      ? `Turn credits on, then set the limit to spent + $${allowanceUsd.toFixed(2)}`
+      : copied
+        ? `$${target} copied · ${step}paste it in Adjust limit`
+        : turningOn
+          ? `Turn credits on, then set Adjust limit to $${target}`
+          : `Set Adjust limit to $${target}`;
+    // Re-read the account as soon as the user comes back from the browser.
     window.addEventListener(
       "focus",
       () => void invoke("refresh_now", { providerId: "claude-usage" }),
@@ -486,7 +493,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   if (spendingHtml) {
     html += spendingHtml;
   }
-  html += renderFuse(d.extra_usage);
+  html += renderCreditsSwitch(d.extra_usage);
   html += renderPrepaid(d.prepaid);
 
   container.innerHTML = html || `<div class="card-error">No usage data returned</div>`;
@@ -506,7 +513,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
-  wireFuse(container, payload);
+  wireCreditsSwitch(container, payload);
   applyLocalActivity(container);
 }
 

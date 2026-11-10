@@ -146,17 +146,17 @@ fn set_budget(app: tauri::AppHandle, budget: Option<f64>) {
 }
 
 #[tauri::command]
-fn get_fuse(app: tauri::AppHandle) -> Option<f64> {
-    state::load(&app).fuse_usd
+fn get_allowance(app: tauri::AppHandle) -> Option<f64> {
+    state::load(&app).credit_allowance_usd
 }
 
 #[tauri::command]
-fn set_fuse(app: tauri::AppHandle, fuse: f64) -> Result<(), String> {
-    if !fuse.is_finite() || fuse <= 0.0 {
-        return Err("The fuse must be more than $0".into());
+fn set_allowance(app: tauri::AppHandle, allowance: f64) -> Result<(), String> {
+    if !allowance.is_finite() || allowance <= 0.0 {
+        return Err("The allowance must be more than $0".into());
     }
     let mut settings = state::load(&app);
-    settings.fuse_usd = Some((fuse * 100.0).round() / 100.0);
+    settings.credit_allowance_usd = Some((allowance * 100.0).round() / 100.0);
     state::save(&app, &settings);
     Ok(())
 }
@@ -259,8 +259,8 @@ pub fn run() {
             resize_window,
             get_budget,
             set_budget,
-            get_fuse,
-            set_fuse,
+            get_allowance,
+            set_allowance,
             open_usage_settings,
             get_layout,
             set_layout
