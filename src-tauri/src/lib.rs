@@ -9,11 +9,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Listener, Manager, PhysicalPosition};
-
-/// Where the account's monthly spend limit is changed.
-const USAGE_SETTINGS_URL: &str = "https://claude.ai/settings/usage";
 use tokio::sync::Notify;
 
+/// Where usage credits are switched on or off and the monthly spend limit is set.
+const USAGE_SETTINGS_URL: &str = "https://claude.ai/settings/usage";
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 const ERROR_BACKOFF_START: Duration = Duration::from_secs(60);
 
@@ -145,47 +144,20 @@ fn set_budget(app: tauri::AppHandle, budget: Option<f64>) {
     state::save(&app, &settings);
 }
 
-#[tauri::command]
-fn get_allowance(app: tauri::AppHandle) -> Option<f64> {
-    state::load(&app).credit_allowance_usd
-}
-
-#[tauri::command]
-fn set_allowance(app: tauri::AppHandle, allowance: f64) -> Result<(), String> {
-    if !allowance.is_finite() || allowance <= 0.0 {
-        return Err("The allowance must be more than $0".into());
-    }
-    let mut settings = state::load(&app);
-    settings.credit_allowance_usd = Some((allowance * 100.0).round() / 100.0);
-    state::save(&app, &settings);
-    Ok(())
-}
-
-/// Opens claude.ai's usage settings, where the monthly spend limit is set.
-/// The dashboard never changes the limit itself.
+/// Opens claude.ai's usage settings. The dashboard never changes the account
+/// itself: there is no public interface for it.
 #[tauri::command]
 fn open_usage_settings() -> Result<(), String> {
     // The URL is a constant, so handing it to the system opener is safe.
     #[cfg(target_os = "windows")]
-    let mut cmd = {
-        // explorer hands a URL to the default browser without a console flash.
-        let mut c = std::process::Command::new("explorer");
-        c.arg(USAGE_SETTINGS_URL);
-        c
-    };
+    let opener = "explorer"; // hands a URL to the default browser without a console flash
     #[cfg(target_os = "macos")]
-    let mut cmd = {
-        let mut c = std::process::Command::new("open");
-        c.arg(USAGE_SETTINGS_URL);
-        c
-    };
+    let opener = "open";
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let mut cmd = {
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg(USAGE_SETTINGS_URL);
-        c
-    };
-    cmd.spawn()
+    let opener = "xdg-open";
+    std::process::Command::new(opener)
+        .arg(USAGE_SETTINGS_URL)
+        .spawn()
         .map(|_| ())
         .map_err(|e| format!("Could not open {USAGE_SETTINGS_URL}: {e}"))
 }
@@ -251,7 +223,6 @@ pub fn run() {
             latest: Mutex::new(HashMap::new()),
             refresh: Mutex::new(HashMap::new()),
         })
-
         .invoke_handler(tauri::generate_handler![
             get_stats,
             refresh_now,
@@ -259,8 +230,6 @@ pub fn run() {
             resize_window,
             get_budget,
             set_budget,
-            get_allowance,
-            set_allowance,
             open_usage_settings,
             get_layout,
             set_layout

@@ -18,10 +18,6 @@ pub struct Settings {
     pub window_y: Option<i32>,
     pub total_credit: Option<f64>,
     pub monthly_budget: Option<f64>,
-    /// What usage credits may spend each time they're turned on, in USD
-    /// (see src/cards/credits-switch.ts); None means the default.
-    #[serde(default)]
-    pub credit_allowance_usd: Option<f64>,
     #[serde(default)]
     pub layout: Layout,
 }
@@ -61,7 +57,6 @@ mod tests {
             serde_json::from_str(r#"{"window_x":10,"window_y":20,"monthly_budget":300.0}"#).unwrap();
         assert_eq!(s.window_x, Some(10));
         assert!(s.layout.order.is_empty() && s.layout.collapsed.is_empty());
-        assert_eq!(s.credit_allowance_usd, None);
     }
 
     #[test]

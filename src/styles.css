@@ -390,65 +390,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Usage credits switch row */
-.credits-state {
-  font-size: 10px;
-  padding: 1px 6px;
+.btn-usage-settings {
+  all: unset;
+  cursor: pointer;
+  margin-left: auto;
+  font-size: 10.5px;
+  padding: 1px 8px;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
-.credits-off .credits-state,
-.credits-on .credits-state {
-  color: var(--bar-green);
-  background: rgba(76, 195, 138, 0.12);
-}
-
-.credits-loose .credits-state,
-.credits-none .credits-state {
-  color: var(--bar-amber);
-  background: rgba(230, 180, 80, 0.12);
-}
-
-.credits-spent .credits-state {
-  color: var(--bar-red);
-  background: rgba(229, 83, 75, 0.14);
-}
-
-.credits-allowance {
-  all: unset;
-  cursor: pointer;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.6);
-  border-bottom: 1px dotted rgba(255, 255, 255, 0.4);
-}
-
-.credits-allowance:hover {
+.btn-usage-settings:hover {
   color: #fff;
-}
-
-.credits-detail {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.credits-action {
-  all: unset;
-  align-self: flex-start;
-  cursor: pointer;
-  margin-top: 4px;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  transition: all 0.15s ease;
-}
-
-.credits-action:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .spending-status-muted {

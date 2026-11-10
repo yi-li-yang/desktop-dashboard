@@ -1,10 +1,8 @@
 // Renders the Claude Code usage card: session + weekly quota bars with
-// reset countdowns, breakdown by activity, extra usage spending & balance,
-// and the usage credits switch (see credits-switch.ts).
+// reset countdowns, breakdown by activity, and extra usage spending & balance.
 // Payloads come from the Rust `claude-usage` provider.
 
 import { invoke } from "@tauri-apps/api/core";
-import { DEFAULT_ALLOWANCE_USD, creditsView } from "./credits-switch";
 
 export interface UsageWindow {
   utilization: number;
@@ -185,92 +183,6 @@ export async function loadBudget(): Promise<void> {
   }
 }
 
-let allowanceUsd = DEFAULT_ALLOWANCE_USD;
-
-export async function loadAllowance(): Promise<void> {
-  try {
-    const saved = await invoke<number | null>("get_allowance");
-    if (saved != null && saved > 0) allowanceUsd = saved;
-  } catch {
-    /* keep the default */
-  }
-}
-
-function renderCreditsSwitch(eu: ExtraUsageData | null | undefined): string {
-  const v = creditsView(eu, allowanceUsd);
-  if (!v) return "";
-  const act = v.action;
-  const button = act
-    ? `<button class="credits-action" data-target="${act.target != null ? act.target.toFixed(2) : ""}" title="Opens claude.ai usage settings${act.target != null ? ` with $${act.target.toFixed(2)} copied for Adjust limit` : ""}">${act.label}</button>`
-    : "";
-  return `
-    <div class="spending-section credits-section credits-${v.tone}">
-      <div class="spending-labels">
-        <div class="spending-left">
-          <span class="spending-title">Usage credits</span>
-          <span class="credits-state">${v.label}</span>
-        </div>
-        <div class="spending-right">
-          <button class="credits-allowance" title="How much credits may spend each time you turn them on (click to change)">$${allowanceUsd.toFixed(2)} a time</button>
-        </div>
-      </div>
-      <div class="credits-detail">${v.detail}</div>
-      ${button}
-    </div>`;
-}
-
-function wireCreditsSwitch(container: HTMLElement, payload: StatsPayload): void {
-  container.querySelector(".credits-allowance")?.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    const val = window.prompt("How much usage credits may spend each time you turn them on (USD):", allowanceUsd.toFixed(2));
-    if (val === null) return;
-    const num = parseFloat(val.trim());
-    if (isNaN(num) || num <= 0) return;
-    try {
-      await invoke("set_allowance", { allowance: num });
-      allowanceUsd = Math.round(num * 100) / 100;
-    } catch (err) {
-      window.alert(String(err));
-    }
-    renderClaudeUsage(container, payload);
-  });
-  const btn = container.querySelector<HTMLButtonElement>(".credits-action");
-  btn?.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    const target = btn.dataset.target ?? "";
-    const turningOn = payload.data?.extra_usage?.is_enabled === false;
-    let copied = false;
-    if (target) {
-      try {
-        await navigator.clipboard.writeText(target);
-        copied = true;
-      } catch {
-        /* clipboard unavailable: the amount is still shown below */
-      }
-    }
-    try {
-      await invoke("open_usage_settings");
-    } catch (err) {
-      window.alert(String(err));
-      return;
-    }
-    const step = turningOn ? "turn credits on, then " : "";
-    btn.textContent = !target
-      ? `Turn credits on, then set the limit to spent + $${allowanceUsd.toFixed(2)}`
-      : copied
-        ? `$${target} copied · ${step}paste it in Adjust limit`
-        : turningOn
-          ? `Turn credits on, then set Adjust limit to $${target}`
-          : `Set Adjust limit to $${target}`;
-    // Re-read the account as soon as the user comes back from the browser.
-    window.addEventListener(
-      "focus",
-      () => void invoke("refresh_now", { providerId: "claude-usage" }),
-      { once: true },
-    );
-  });
-}
-
 function barColor(utilization: number): string {
   if (utilization >= 90) return "var(--bar-red)";
   if (utilization >= 70) return "var(--bar-amber)";
@@ -355,11 +267,16 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
   if (!eu) return "";
 
   if (!eu.is_enabled) {
+    const spentOff = eu.used != null ? `$${eu.used.toFixed(2)} spent this month` : "Spent this month: unknown";
     return `
       <div class="spending-section">
         <div class="spending-labels">
           <span class="spending-title">Extra Spending</span>
           <span class="spending-status-muted">Extra Usage: Off</span>
+        </div>
+        <div class="spending-footer">
+          <span class="spending-uncapped-text">${spentOff}</span>
+          ${SETTINGS_BUTTON}
         </div>
       </div>`;
   }
@@ -406,6 +323,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
           <span class="spending-balance">${balanceFormatted} balance left${rate}</span>
           <span class="spending-reset">${resetText}</span>
         </div>
+        <div class="spending-footer">${SETTINGS_BUTTON}</div>
       </div>`;
   }
 
@@ -426,7 +344,28 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
         <span class="spending-uncapped-text">Pay-as-you-go${rate}</span>
         <span class="spending-reset">${resetText}</span>
       </div>
+      <div class="spending-footer">${SETTINGS_BUTTON}</div>
     </div>`;
+}
+
+const SETTINGS_BUTTON = `<button class="btn-usage-settings" title="Opens claude.ai usage settings: switch usage credits on or off and set the monthly limit">Usage settings</button>`;
+
+function wireUsageSettings(container: HTMLElement): void {
+  container.querySelector(".btn-usage-settings")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    try {
+      await invoke("open_usage_settings");
+    } catch (err) {
+      window.alert(String(err));
+      return;
+    }
+    // Re-read the account as soon as the user comes back from the browser.
+    window.addEventListener(
+      "focus",
+      () => void invoke("refresh_now", { providerId: "claude-usage" }),
+      { once: true },
+    );
+  });
 }
 
 function renderPrepaid(p: PrepaidData | null | undefined): string {
@@ -493,7 +432,6 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   if (spendingHtml) {
     html += spendingHtml;
   }
-  html += renderCreditsSwitch(d.extra_usage);
   html += renderPrepaid(d.prepaid);
 
   container.innerHTML = html || `<div class="card-error">No usage data returned</div>`;
@@ -513,7 +451,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
-  wireCreditsSwitch(container, payload);
+  wireUsageSettings(container);
   applyLocalActivity(container);
 }
 
