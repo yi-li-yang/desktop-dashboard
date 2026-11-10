@@ -390,51 +390,68 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Usage guard row */
-.guard-cap,
-.guard-toggle {
-  all: unset;
-  cursor: pointer;
+/* Spend fuse row */
+.fuse-state {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  transition: all 0.15s ease;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.guard-cap {
+.fuse-armed .fuse-state {
+  color: var(--bar-green);
+  background: rgba(76, 195, 138, 0.12);
+}
+
+.fuse-loose .fuse-state,
+.fuse-none .fuse-state {
+  color: var(--bar-amber);
+  background: rgba(230, 180, 80, 0.12);
+}
+
+.fuse-blown .fuse-state {
+  color: var(--bar-red);
+  background: rgba(229, 83, 75, 0.14);
+}
+
+.fuse-size {
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
   color: rgba(255, 255, 255, 0.6);
   border-bottom: 1px dotted rgba(255, 255, 255, 0.4);
-  border-radius: 0;
-  padding: 0 1px;
 }
 
-.guard-cap:hover {
+.fuse-size:hover {
   color: #fff;
 }
 
-.guard-toggle {
-  color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.guard-toggle.on {
-  color: rgba(76, 195, 138, 0.95);
-  background: rgba(76, 195, 138, 0.12);
-  border-color: rgba(76, 195, 138, 0.25);
-}
-
-.guard-status {
+.fuse-detail {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
 }
 
-.guard-over .guard-status {
-  color: var(--bar-amber);
+.fuse-action {
+  all: unset;
+  align-self: flex-start;
+  cursor: pointer;
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.15s ease;
 }
 
-.guard-stopped .guard-status {
-  color: var(--bar-red);
+.fuse-action:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.fuse-blown .fuse-action {
+  border-color: rgba(229, 83, 75, 0.5);
 }
 
 .spending-status-muted {

@@ -1,5 +1,4 @@
 mod activity;
-mod guard;
 mod providers;
 mod state;
 
@@ -10,6 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Listener, Manager, PhysicalPosition};
+
+/// Where the account's monthly spend limit is changed.
+const USAGE_SETTINGS_URL: &str = "https://claude.ai/settings/usage";
 use tokio::sync::Notify;
 
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
@@ -124,26 +126,6 @@ async fn claude_activity() -> Option<u64> {
         .flatten()
 }
 
-/// Usage guard settings and state (see claude-guard/ and guard.rs).
-#[tauri::command]
-fn get_guard() -> Value {
-    guard::snapshot(now_ms() as f64 / 1000.0)
-}
-
-/// Switches the usage guard on or off and sets its overage cap in USD.
-#[tauri::command]
-fn set_guard(enabled: bool, cap_usd: f64) -> Result<Value, String> {
-    if !cap_usd.is_finite() || cap_usd < 0.0 {
-        return Err("Cap must be zero or more".into());
-    }
-    let dir = guard::guard_dir().ok_or("Could not locate home directory")?;
-    let mut cfg = guard::load_config(&dir);
-    cfg.enabled = enabled;
-    cfg.cap_usd = (cap_usd * 100.0).round() / 100.0;
-    guard::save_config(&dir, &cfg).map_err(|e| format!("Could not save guard settings: {e}"))?;
-    Ok(guard::snapshot(now_ms() as f64 / 1000.0))
-}
-
 #[tauri::command]
 fn resize_window(app: tauri::AppHandle, height: f64) {
     if let Some(win) = app.get_webview_window("main") {
@@ -161,6 +143,51 @@ fn set_budget(app: tauri::AppHandle, budget: Option<f64>) {
     let mut settings = state::load(&app);
     settings.monthly_budget = budget;
     state::save(&app, &settings);
+}
+
+#[tauri::command]
+fn get_fuse(app: tauri::AppHandle) -> Option<f64> {
+    state::load(&app).fuse_usd
+}
+
+#[tauri::command]
+fn set_fuse(app: tauri::AppHandle, fuse: f64) -> Result<(), String> {
+    if !fuse.is_finite() || fuse <= 0.0 {
+        return Err("The fuse must be more than $0".into());
+    }
+    let mut settings = state::load(&app);
+    settings.fuse_usd = Some((fuse * 100.0).round() / 100.0);
+    state::save(&app, &settings);
+    Ok(())
+}
+
+/// Opens claude.ai's usage settings, where the monthly spend limit is set.
+/// The dashboard never changes the limit itself.
+#[tauri::command]
+fn open_usage_settings() -> Result<(), String> {
+    // The URL is a constant, so handing it to the system opener is safe.
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        // explorer hands a URL to the default browser without a console flash.
+        let mut c = std::process::Command::new("explorer");
+        c.arg(USAGE_SETTINGS_URL);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(USAGE_SETTINGS_URL);
+        c
+    };
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(USAGE_SETTINGS_URL);
+        c
+    };
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open {USAGE_SETTINGS_URL}: {e}"))
 }
 
 #[tauri::command]
@@ -224,15 +251,17 @@ pub fn run() {
             latest: Mutex::new(HashMap::new()),
             refresh: Mutex::new(HashMap::new()),
         })
+
         .invoke_handler(tauri::generate_handler![
             get_stats,
             refresh_now,
             claude_activity,
-            get_guard,
-            set_guard,
             resize_window,
             get_budget,
             set_budget,
+            get_fuse,
+            set_fuse,
+            open_usage_settings,
             get_layout,
             set_layout
         ])

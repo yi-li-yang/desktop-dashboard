@@ -5,7 +5,7 @@ import {
   renderClaudeUsage,
   tickCountdowns,
   loadBudget,
-  loadGuard,
+  loadFuse,
   watchClaudeActivity,
   type StatsPayload,
 } from "./cards/claude-usage";
@@ -120,7 +120,7 @@ window.addEventListener("keydown", (e) => {
 
 window.addEventListener("DOMContentLoaded", async () => {
   await loadBudget();
-  await loadGuard();
+  await loadFuse();
 
   const widgetEl = document.querySelector<HTMLElement>("#widget");
   if (widgetEl && typeof ResizeObserver !== "undefined") {

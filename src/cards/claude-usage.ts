@@ -1,9 +1,10 @@
 // Renders the Claude Code usage card: session + weekly quota bars with
 // reset countdowns, breakdown by activity, extra usage spending & balance,
-// and the usage guard switch (claude-guard/).
+// and the spend fuse (see fuse.ts).
 // Payloads come from the Rust `claude-usage` provider.
 
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_FUSE_USD, fuseView } from "./fuse";
 
 export interface UsageWindow {
   utilization: number;
@@ -165,8 +166,6 @@ export function watchClaudeActivity(container: HTMLElement): void {
       /* keep the last value; it expires on its own */
     }
     applyLocalActivity(container);
-    await loadGuard();
-    applyGuard(container);
   };
   void poll();
   setInterval(poll, 10_000);
@@ -186,105 +185,82 @@ export async function loadBudget(): Promise<void> {
   }
 }
 
-// Usage guard (claude-guard/usage_guard.py): blocks new Claude Code prompts
-// once the session limit is used up and stops a running task after a small
-// overage cap. The backend reads its state file and writes its config file;
-// this row shows the state and lets the user switch it and change the cap.
-interface GuardConfig {
-  enabled: boolean;
-  cap_usd: number;
-  threshold: number;
-}
+let fuseUsd = DEFAULT_FUSE_USD;
 
-interface GuardStatus {
-  reporting: boolean;
-  live?: boolean;
-  used_pct?: number | null;
-  resets_at?: number | null;
-  over?: boolean;
-  spill_usd?: number;
-  stopped?: boolean;
-}
-
-interface GuardSnapshot {
-  config: GuardConfig;
-  status: GuardStatus;
-}
-
-let guard: GuardSnapshot | null = null;
-
-export async function loadGuard(): Promise<void> {
+export async function loadFuse(): Promise<void> {
   try {
-    guard = await invoke<GuardSnapshot>("get_guard");
+    const saved = await invoke<number | null>("get_fuse");
+    if (saved != null && saved > 0) fuseUsd = saved;
   } catch {
-    /* keep the last snapshot */
+    /* keep the default */
   }
 }
 
-function guardStatusText(g: GuardSnapshot): { text: string; tone: string } {
-  const { config: c, status: s } = g;
-  const money = (n: number) => `$${n.toFixed(2)}`;
-  const at = (secs: number | null | undefined) =>
-    secs ? new Date(secs * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "the reset";
-  if (!c.enabled) return { text: "Off · past the limit, new work runs on credits", tone: "off" };
-  if (!s.reporting) return { text: "Waiting for Claude Code's status line (see claude-guard)", tone: "off" };
-  if (s.stopped) {
-    return { text: `Stopped at ${money(s.spill_usd ?? 0)} past the limit · resumes after ${at(s.resets_at)}`, tone: "stopped" };
-  }
-  if (s.over) {
-    return { text: `Over limit · new prompts wait · spill ${money(s.spill_usd ?? 0)} / ${money(c.cap_usd)}`, tone: "over" };
-  }
-  return { text: "Standing by · new prompts wait once the session limit is hit", tone: "ok" };
-}
-
-function guardHtml(g: GuardSnapshot): string {
-  const { text, tone } = guardStatusText(g);
-  const on = g.config.enabled;
+function renderFuse(eu: ExtraUsageData | null | undefined): string {
+  const v = fuseView(eu, fuseUsd);
+  if (!v) return "";
+  const fuse = `$${fuseUsd.toFixed(2)}`;
+  const action =
+    v.target != null
+      ? `<button class="fuse-action" data-target="${v.target.toFixed(2)}" title="Copies the amount and opens claude.ai usage settings, where Adjust limit takes it">Set limit to $${v.target.toFixed(2)}</button>`
+      : "";
   return `
-    <div class="spending-section guard-section guard-${tone}">
+    <div class="spending-section fuse-section fuse-${v.tone}">
       <div class="spending-labels">
-        <span class="spending-title">Usage guard</span>
+        <div class="spending-left">
+          <span class="spending-title">Spend fuse</span>
+          <span class="fuse-state">${v.label}</span>
+        </div>
         <div class="spending-right">
-          <button class="guard-cap" title="Most usage credits a running task may spend after the session limit (click to change)">cap $${g.config.cap_usd.toFixed(2)}</button>
-          <button class="guard-toggle${on ? " on" : ""}" aria-pressed="${on}" title="Switch the usage guard ${on ? "off" : "on"}">${on ? "On" : "Off"}</button>
+          <button class="fuse-size" title="Most one run may spend past your plan's limits (click to change)">${fuse} per run</button>
         </div>
       </div>
-      <div class="guard-status">${text}</div>
+      <div class="fuse-detail">${v.detail}</div>
+      ${action}
     </div>`;
 }
 
-/** Fills the guard row from the last snapshot. DOM-only, so it never disturbs a render. */
-function applyGuard(container: HTMLElement): void {
-  const slot = container.querySelector<HTMLElement>(".guard-slot");
-  if (!slot) return;
-  if (!guard) {
-    slot.innerHTML = "";
-    return;
-  }
-  slot.innerHTML = guardHtml(guard);
-  const current = guard;
-  const save = async (enabled: boolean, capUsd: number) => {
+function wireFuse(container: HTMLElement, payload: StatsPayload): void {
+  container.querySelector(".fuse-size")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const val = window.prompt("Most a single run may spend past your plan's limits (USD):", fuseUsd.toFixed(2));
+    if (val === null) return;
+    const num = parseFloat(val.trim());
+    if (isNaN(num) || num <= 0) return;
     try {
-      guard = await invoke<GuardSnapshot>("set_guard", { enabled, capUsd });
+      await invoke("set_fuse", { fuse: num });
+      fuseUsd = Math.round(num * 100) / 100;
     } catch (err) {
       window.alert(String(err));
     }
-    applyGuard(container);
-  };
-  slot.querySelector(".guard-toggle")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    void save(!current.config.enabled, current.config.cap_usd);
+    renderClaudeUsage(container, payload);
   });
-  slot.querySelector(".guard-cap")?.addEventListener("click", (e) => {
+  const btn = container.querySelector<HTMLButtonElement>(".fuse-action");
+  btn?.addEventListener("click", async (e) => {
     e.stopPropagation();
-    const val = window.prompt(
-      "Most usage credits (USD) a running task may spend after the session limit before it is stopped:",
-      current.config.cap_usd.toFixed(2),
+    const target = btn.dataset.target ?? "";
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(target);
+      copied = true;
+    } catch {
+      /* clipboard unavailable: the amount is still shown on the button */
+    }
+    try {
+      await invoke("open_usage_settings");
+    } catch (err) {
+      window.alert(String(err));
+      return;
+    }
+    btn.textContent = copied
+      ? `$${target} copied · paste it in Adjust limit`
+      : `Type $${target} in Adjust limit`;
+    // Re-read the limit as soon as the user comes back from the browser.
+    window.addEventListener(
+      "focus",
+      () => void invoke("refresh_now", { providerId: "claude-usage" }),
+      { once: true },
     );
-    if (val === null) return;
-    const num = parseFloat(val.trim());
-    if (isNaN(num) || num < 0) return;
-    void save(current.config.enabled, num);
   });
 }
 
@@ -510,8 +486,8 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   if (spendingHtml) {
     html += spendingHtml;
   }
+  html += renderFuse(d.extra_usage);
   html += renderPrepaid(d.prepaid);
-  html += `<div class="guard-slot"></div>`;
 
   container.innerHTML = html || `<div class="card-error">No usage data returned</div>`;
 
@@ -530,8 +506,8 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
+  wireFuse(container, payload);
   applyLocalActivity(container);
-  applyGuard(container);
 }
 
 /** Refreshes the ticking countdown texts without a new fetch. */
