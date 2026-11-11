@@ -267,11 +267,16 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
   if (!eu) return "";
 
   if (!eu.is_enabled) {
+    const spentOff = eu.used != null ? `$${eu.used.toFixed(2)} spent this month` : "Spent this month: unknown";
     return `
       <div class="spending-section">
         <div class="spending-labels">
           <span class="spending-title">Extra Spending</span>
-          <span class="spending-status-muted">Extra Usage: Off</span>
+          <button class="spending-status-muted edit-limit" title="Change usage credits and the monthly limit">Extra Usage: Off <span class="edit-pencil">✎</span></button>
+        </div>
+        <div class="spending-footer">
+          <span class="spending-uncapped-text">${spentOff}</span>
+          ${settingsButton()}
         </div>
       </div>`;
   }
@@ -308,7 +313,9 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
           </div>
           <div class="spending-right">
             <span class="spending-spent">${spentFormatted}</span>
-            <span class="spending-limit ${isCustom ? "clickable-budget" : ""}" title="${isCustom ? "Custom budget (click to edit)" : "Account monthly limit"}">/ ${limitFormatted}</span>
+            ${isCustom
+              ? `<span class="spending-limit clickable-budget" title="Custom budget (click to edit)">/ ${limitFormatted}</span>`
+              : `<button class="spending-limit edit-limit" title="Change the account's monthly limit">/ ${limitFormatted} <span class="edit-pencil">✎</span></button>`}
           </div>
         </div>
         <div class="usage-bar">
@@ -318,6 +325,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
           <span class="spending-balance">${balanceFormatted} balance left${rate}</span>
           <span class="spending-reset">${resetText}</span>
         </div>
+        <div class="spending-footer">${settingsButton()}</div>
       </div>`;
   }
 
@@ -338,7 +346,35 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
         <span class="spending-uncapped-text">Pay-as-you-go${rate}</span>
         <span class="spending-reset">${resetText}</span>
       </div>
+      <div class="spending-footer">${settingsButton()}</div>
     </div>`;
+}
+
+// ---- Usage settings
+// The amber pencil spots (the limit, "Extra Usage: Off", "Change limit") open
+// claude.ai's usage page in the browser. The dashboard never changes the account.
+
+function settingsButton(): string {
+  return `<button class="btn-usage-settings" title="Open claude.ai usage settings: switch usage credits on or off and set the monthly limit"><span class="edit-pencil">✎</span> Change limit</button>`;
+}
+
+function wireUsageSettings(container: HTMLElement): void {
+  const open = async (e: Event) => {
+    e.stopPropagation();
+    try {
+      await invoke("open_usage_settings");
+    } catch (err) {
+      window.alert(String(err));
+      return;
+    }
+    // Re-read the account as soon as the user comes back from the browser.
+    window.addEventListener(
+      "focus",
+      () => void invoke("refresh_now", { providerId: "claude-usage" }),
+      { once: true },
+    );
+  };
+  container.querySelectorAll(".btn-usage-settings, .edit-limit").forEach((el) => el.addEventListener("click", open));
 }
 
 function renderPrepaid(p: PrepaidData | null | undefined): string {
@@ -424,6 +460,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
       }
     });
   });
+  wireUsageSettings(container);
   applyLocalActivity(container);
 }
 

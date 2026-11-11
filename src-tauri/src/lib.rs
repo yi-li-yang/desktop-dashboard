@@ -11,6 +11,8 @@ use std::time::Duration;
 use tauri::{Emitter, Listener, Manager, PhysicalPosition};
 use tokio::sync::Notify;
 
+/// Where usage credits are switched on or off and the monthly spend limit is set.
+const USAGE_SETTINGS_URL: &str = "https://claude.ai/settings/usage";
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 const ERROR_BACKOFF_START: Duration = Duration::from_secs(60);
 
@@ -142,6 +144,24 @@ fn set_budget(app: tauri::AppHandle, budget: Option<f64>) {
     state::save(&app, &settings);
 }
 
+/// Opens claude.ai's usage settings. The dashboard never changes the account
+/// itself: there is no public interface for it.
+#[tauri::command]
+fn open_usage_settings() -> Result<(), String> {
+    // The URL is a constant, so handing it to the system opener is safe.
+    #[cfg(target_os = "windows")]
+    let opener = "explorer"; // hands a URL to the default browser without a console flash
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let opener = "xdg-open";
+    std::process::Command::new(opener)
+        .arg(USAGE_SETTINGS_URL)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open {USAGE_SETTINGS_URL}: {e}"))
+}
+
 #[tauri::command]
 fn get_layout(app: tauri::AppHandle) -> state::Layout {
     state::load(&app).layout
@@ -210,6 +230,7 @@ pub fn run() {
             resize_window,
             get_budget,
             set_budget,
+            open_usage_settings,
             get_layout,
             set_layout
         ])
