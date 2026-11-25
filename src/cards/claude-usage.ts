@@ -2,7 +2,8 @@
 // reset countdowns, breakdown by activity, and extra usage spending & balance.
 // Payloads come from the Rust `claude-usage` provider.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../ipc";
+import { ICON } from "../icons";
 
 export interface UsageWindow {
   utilization: number;
@@ -129,7 +130,7 @@ function activeRise(key: string): ActiveRise | null {
 function rateHtml(r: ActiveRise, withSep: boolean): string {
   const amount =
     r.unit === "usd" ? `$${r.delta.toFixed(2)}` : `${Number(r.delta.toFixed(1))}%`;
-  return `<span class="usage-rate" data-rise-at="${r.at}">▲ +${amount} in last 5m${withSep ? " · " : ""}</span>`;
+  return `<span class="usage-rate" data-rise-at="${r.at}">+${amount} in last 5m${withSep ? " · " : ""}</span>`;
 }
 
 let localActiveAt: number | null = null;
@@ -149,7 +150,7 @@ function applyLocalActivity(container: HTMLElement): void {
       const sep = reset.textContent?.trim() ? " · " : "";
       reset.insertAdjacentHTML(
         "afterbegin",
-        `<span class="usage-rate usage-rate-local">● Claude Code active${sep}</span>`,
+        `<span class="usage-rate usage-rate-local">Claude Code active${sep}</span>`,
       );
     }
   });
@@ -183,10 +184,12 @@ export async function loadBudget(): Promise<void> {
   }
 }
 
+// Quota used: sky while there is room, ochre from 70%, rust from 90%. The
+// "% left" number beside each bar says the same thing without colour.
 function barColor(utilization: number): string {
-  if (utilization >= 90) return "var(--bar-red)";
-  if (utilization >= 70) return "var(--bar-amber)";
-  return "var(--bar-green)";
+  if (utilization >= 90) return "var(--data-rust)";
+  if (utilization >= 70) return "var(--data-ochre)";
+  return "var(--data-sky)";
 }
 
 function countdown(resetsAt: string | null): string {
@@ -248,7 +251,7 @@ function row(label: string, w: UsageWindow | null): string {
     <div class="usage-row${rise ? " burning" : ""}" data-resets="${w.resets_at ?? ""}">
       <div class="usage-labels">
         <span class="usage-name">${label}</span>
-        <span class="usage-remaining">${remaining.toFixed(0)}% left</span>
+        <span class="usage-remaining"><b>${remaining.toFixed(0)}%</b> left</span>
       </div>
       <div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${barColor(pct)}"></div></div>
       <div class="usage-reset">${resetHtml}</div>
@@ -272,7 +275,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
       <div class="spending-section">
         <div class="spending-labels">
           <span class="spending-title">Extra Spending</span>
-          <button class="spending-status-muted edit-limit" title="Change usage credits and the monthly limit">Extra Usage: Off <span class="edit-pencil">✎</span></button>
+          <button class="spending-status-muted edit-limit" title="Change usage credits and the monthly limit">Extra Usage: Off ${ICON.pencil}</button>
         </div>
         <div class="spending-footer">
           <span class="spending-uncapped-text">${spentOff}</span>
@@ -315,11 +318,11 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
             <span class="spending-spent">${spentFormatted}</span>
             ${isCustom
               ? `<span class="spending-limit clickable-budget" title="Custom budget (click to edit)">/ ${limitFormatted}</span>`
-              : `<button class="spending-limit edit-limit" title="Change the account's monthly limit">/ ${limitFormatted} <span class="edit-pencil">✎</span></button>`}
+              : `<button class="spending-limit edit-limit" title="Change the account's monthly limit">/ ${limitFormatted} ${ICON.pencil}</button>`}
           </div>
         </div>
         <div class="usage-bar">
-          <div class="usage-fill" style="width:${pct}%;background:${isLimitReached ? "var(--bar-red)" : barColor(pct)}"></div>
+          <div class="usage-fill" style="width:${pct}%;background:${isLimitReached ? "var(--data-rust)" : barColor(pct)}"></div>
         </div>
         <div class="spending-footer">
           <span class="spending-balance">${balanceFormatted} balance left${rate}</span>
@@ -339,7 +342,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
         </div>
         <div class="spending-right">
           <span class="spending-spent">${spentFormatted}</span>
-          <button class="btn-set-budget" title="Set a monthly spend budget to track remaining balance">+ set limit</button>
+          <button class="btn-set-budget" title="Set a monthly spend budget to track remaining balance">set limit</button>
         </div>
       </div>
       <div class="spending-footer">
@@ -351,11 +354,11 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
 }
 
 // ---- Usage settings
-// The amber pencil spots (the limit, "Extra Usage: Off", "Change limit") open
+// The pencil spots (the limit, "Extra Usage: Off", "Change limit") open
 // claude.ai's usage page in the browser. The dashboard never changes the account.
 
 function settingsButton(): string {
-  return `<button class="btn-usage-settings" title="Open claude.ai usage settings: switch usage credits on or off and set the monthly limit"><span class="edit-pencil">✎</span> Change limit</button>`;
+  return `<button class="btn-usage-settings" title="Open claude.ai usage settings: switch usage credits on or off and set the monthly limit">${ICON.pencil} Change limit</button>`;
 }
 
 function wireUsageSettings(container: HTMLElement): void {

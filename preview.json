@@ -1,0 +1,31 @@
+{
+  "_comment": "How auto-generate-preview-image captures this app: the widget in demo mode, dark and light side by side (docs/preview/preview.html).",
+  "url": "http://localhost:1430/docs/preview/preview.html",
+  "data": "invented",
+  "dataNote": "The widget reads its data over Tauri IPC, so `npm run demo` swaps those calls for src/demo.ts: invented usage, quota, spending, credits and a made-up day of Agile prices. No account, credentials or provider API is read.",
+  "watch": ["src/", "index.html", "docs/preview/preview.html"],
+  "start": {
+    "command": "npm run demo",
+    "waitUrl": "http://localhost:1430/",
+    "timeoutMs": 60000
+  },
+  "viewport": { "width": 1152, "height": 720 },
+  "deviceScaleFactor": 2,
+  "reducedMotion": "reduce",
+  "timezoneId": "Europe/London",
+  "locale": "en-GB",
+  "clock": "2026-11-25T13:40:00Z",
+  "network": {
+    "allow": [
+      "http://localhost:1430/**",
+      "https://fonts.googleapis.com/**",
+      "https://fonts.gstatic.com/**"
+    ],
+    "failOnBlocked": true
+  },
+  "steps": [
+    { "waitForFunction": "document.querySelectorAll('iframe[data-ready]').length === 2" },
+    { "eval": "Promise.all([...document.querySelectorAll('iframe')].map((f) => f.contentDocument.fonts.ready))" },
+    { "wait": 500 }
+  ]
+}

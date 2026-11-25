@@ -1,6 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke, listen, emit, closeWindow } from "./ipc";
+import { ICON } from "./icons";
 import {
   renderClaudeUsage,
   tickCountdowns,
@@ -118,6 +117,8 @@ window.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("DOMContentLoaded", async () => {
+  document.querySelector("#btn-refresh")!.innerHTML = ICON.refresh;
+  document.querySelector("#btn-close")!.innerHTML = ICON.x;
   await loadBudget();
 
   const widgetEl = document.querySelector<HTMLElement>("#widget");
@@ -144,7 +145,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     invoke("refresh_now", { providerId: null });
   });
   document.querySelector("#btn-close")?.addEventListener("click", () => {
-    getCurrentWindow().close();
+    void closeWindow();
   });
 
   setInterval(() => {

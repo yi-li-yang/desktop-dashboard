@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- The README preview frame (served by `npm run demo`, captured by
+     auto-generate-preview-image, see preview.json): the widget in demo mode,
+     dark on the left and light on the right, each on its own stone ground.
+     Each iframe takes the height the widget asks for, as the Tauri window does. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>desktop-dashboard preview</title>
+    <link rel="stylesheet" href="/src/vp/tokens.css" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; }
+      body { display: grid; grid-template-columns: 1fr 1fr; }
+      .half { display: grid; place-items: center; background: var(--ground); }
+      iframe { width: 340px; height: 200px; border: 0; background: transparent; display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="half" data-theme="dark"><iframe src="/index.html?theme=dark" title="Widget, dark theme"></iframe></div>
+    <div class="half" data-theme="light"><iframe src="/index.html?theme=light" title="Widget, light theme"></iframe></div>
+    <script>
+      addEventListener("message", (e) => {
+        const { demoHeight, theme } = e.data ?? {};
+        const frame = document.querySelector(`iframe[src$="theme=${theme}"]`);
+        if (frame && demoHeight > 0) {
+          frame.style.height = `${demoHeight}px`;
+          frame.dataset.ready = "1";
+        }
+      });
+    </script>
+  </body>
+</html>

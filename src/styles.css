@@ -1,5 +1,7 @@
-/* Frosted-glass widget. The OS window is transparent; native Acrylic blur is
-   applied behind it, so the page background stays mostly transparent. */
+/* Desktop widget on Yili Yang's visual system (see DESIGN.md; tokens come from
+   src/vp/tokens.css). Matte surface at 96% opacity over a transparent window,
+   square corners, hairline rules, numbers in the monospace face. Text is 12px
+   (secondary) or 14px (primary); the one larger figure is the current price. */
 
 * {
   margin: 0;
@@ -14,15 +16,40 @@ body {
   height: auto;
   min-height: 0;
   overflow: hidden;
-  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
-  color: #f0f0f0;
-  font-size: 13px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
 }
 
-:root {
-  --bar-green: #4cc38a;
-  --bar-amber: #e6b450;
-  --bar-red: #e5534b;
+/* Numbers that sit in a column or change over time. */
+.usage-remaining,
+.usage-reset,
+.usage-rate,
+.spending-right,
+.spending-footer,
+.prepaid-amount,
+.agile-price,
+.agile-until,
+.agile-chart-label span,
+.agile-window,
+.breakdown-chip b,
+.card-meta,
+#widget-status {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  vertical-align: -2px;
+}
+
+button:focus-visible {
+  outline: var(--focus-width) solid var(--lichen);
+  outline-offset: var(--focus-offset);
 }
 
 #widget {
@@ -30,87 +57,82 @@ body {
   flex-direction: column;
   height: auto;
   min-height: 0;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(24, 24, 30, 0.45); /* tint over acrylic; fallback if no blur */
-  padding: 10px 14px 10px;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  padding: var(--space-2) var(--space-4) var(--space-3);
   overflow: hidden;
 }
 
-/* Header */
+/* Header: an empty drag strip; refresh and close appear on hover. */
 #widget-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
+  min-height: 20px;
   cursor: grab;
 }
 
 #widget-buttons {
   margin-left: auto;
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--fast) var(--out);
 }
 
-#widget:hover #widget-buttons {
+#widget:hover #widget-buttons,
+#widget-buttons:focus-within {
   opacity: 1;
 }
 
 #widget-buttons button {
   all: unset;
   cursor: pointer;
+  display: grid;
+  place-items: center;
   width: 20px;
   height: 20px;
-  text-align: center;
-  line-height: 20px;
-  border-radius: 5px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 12px;
+  color: var(--muted);
 }
 
 #widget-buttons button:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  color: var(--ink);
 }
 
-#btn-close:hover {
-  background: rgba(229, 83, 75, 0.8) !important;
+#widget-buttons button:focus-visible {
+  outline: var(--focus-width) solid var(--lichen);
+  outline-offset: 0;
 }
 
-/* Cards */
+/* Cards: one section per stat, divided by hairline rules, not boxes. */
 #cards {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
-/* Every card is its own boxed panel, so unrelated blocks stay visually
-   isolated from each other. Renderers fill the box; they don't draw their own
-   outer border or background. */
 .card {
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.card:first-child {
+  border-top: 0;
+  padding-top: var(--space-1);
 }
 
 /* Title row (added by card-frame.ts): click to collapse/expand, drag to reorder. */
 .card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: grab;
   touch-action: none;
 }
 
 .card-chevron {
-  width: 10px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
-  transition: transform 0.15s ease;
+  display: grid;
+  color: var(--muted);
+  transition: transform var(--fast) var(--out);
 }
 
 .card.collapsed .card-chevron {
@@ -118,19 +140,16 @@ body {
 }
 
 .card-title {
-  font-weight: 600;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .card-meta {
   margin-left: auto;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
-  padding: 1px 7px;
-  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .card-meta:empty {
@@ -138,167 +157,134 @@ body {
 }
 
 .card-body {
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 
 .card.collapsed .card-body {
   display: none;
 }
 
-/* Being dragged: lifted, with the grabbing cursor everywhere on the row. */
+/* Being dragged: lifted onto the raised surface, edged, no shadow. */
 .card.dragging {
-  border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  background: var(--raised);
+  outline: 1px solid var(--edge);
 }
 
 .card.dragging .card-head {
   cursor: grabbing;
 }
 
+/* Quota rows */
 .usage-row {
-  padding: 2px 0;
+  padding: var(--space-1) 0;
 }
 
 .usage-labels {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 3px;
-}
-
-.usage-name {
-  color: rgba(255, 255, 255, 0.85);
+  align-items: baseline;
+  margin-bottom: var(--space-1);
 }
 
 .usage-remaining {
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.usage-remaining b {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .usage-bar {
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 4px;
+  background: var(--rule);
   overflow: hidden;
 }
 
 .usage-fill {
   height: 100%;
-  border-radius: 3px;
-  transition: width 0.6s ease;
+  transition: width var(--panel) var(--out);
 }
 
 .usage-reset {
-  margin-top: 2px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  margin-top: var(--space-1);
+  font-size: 12px;
+  color: var(--muted);
 }
 
-/* "Spending now": readout from the latest poll-to-poll rise, plus a bar pulse. */
+.usage-ready {
+  color: var(--ink);
+}
+
+/* "Spending now": the latest poll-to-poll rise, or local Claude Code activity.
+   The row's bar thickens and the readout leads with a round status dot; with
+   motion allowed the dot fades slowly, like an instrument's live light. */
 .usage-rate {
-  color: var(--bar-amber);
-  font-variant-numeric: tabular-nums;
+  color: var(--ink);
 }
 
 .usage-rate-local {
-  color: var(--bar-green);
+  font-family: var(--font-sans);
+}
+
+.usage-rate::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-1);
+  border-radius: var(--radius-dot);
+  background: currentColor;
+  vertical-align: 1px;
 }
 
 .spending-balance .usage-rate,
 .spending-uncapped-text .usage-rate {
-  margin-left: 6px;
+  margin-left: var(--space-2);
 }
 
-.usage-fill {
-  position: relative;
-  overflow: hidden;
-}
-
-/* While burning: the bar thickens and glows (static, so it also shows with
-   reduced motion); with motion allowed the fill breathes and a bright band
-   sweeps across it. overflow is opened so the glow isn't clipped by the track. */
 .burning .usage-bar {
-  overflow: visible;
-  transform: scaleY(1.5);
-  transition: transform 0.3s ease;
-}
-
-.burning .usage-fill {
-  box-shadow: 0 0 5px 0 rgba(255, 255, 255, 0.18);
+  height: 6px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .burning .usage-fill {
-    animation: usage-breathe 2.8s ease-in-out infinite;
-  }
-
-  .burning .usage-fill::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 35%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-    animation: usage-sweep 2.4s ease-in-out infinite;
-  }
-
-  .burning .usage-rate {
-    animation: usage-blink 2.8s ease-in-out infinite;
+  .burning .usage-rate::before {
+    animation: live-dot 2.4s ease-out infinite;
   }
 }
 
-@keyframes usage-breathe {
-  0%, 100% { filter: brightness(0.95); box-shadow: 0 0 3px 0 rgba(255, 255, 255, 0.08); }
-  50% { filter: brightness(1.15); box-shadow: 0 0 7px 1px rgba(255, 255, 255, 0.28); }
+@keyframes live-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
-@keyframes usage-sweep {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(300%); }
-}
-
-@keyframes usage-blink {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
-}
-
-.usage-reset-time {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 10.5px;
-}
-
-.usage-ready {
-  color: rgba(76, 195, 138, 0.85);
-  font-size: 11px;
-}
-
-/* 7-Day Usage Breakdown */
+/* Weekly breakdown */
 .breakdown-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 3px;
-  margin-bottom: 4px;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
 }
 
 .breakdown-chip {
-  font-size: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-  padding: 1px 6px;
-  border-radius: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  padding: 0 var(--space-2);
 }
 
 .breakdown-chip b {
-  color: rgba(255, 255, 255, 0.95);
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 500;
 }
 
-/* Spending & Extra Usage */
+/* Extra spending */
 .spending-section {
-  margin-top: 6px;
-  padding-top: 7px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--rule);
   display: flex;
   flex-direction: column;
 }
@@ -306,297 +292,233 @@ body {
 .spending-labels {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
+  align-items: baseline;
+  margin-bottom: var(--space-1);
 }
 
 .spending-left {
   display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.spending-title {
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
-  font-size: 12.5px;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 .spending-right {
   display: flex;
-  align-items: center;
-  gap: 5px;
-  font-variant-numeric: tabular-nums;
+  align-items: baseline;
+  gap: var(--space-1);
   font-size: 12px;
+  color: var(--muted);
 }
 
 .spending-spent {
-  color: #fff;
-  font-weight: 600;
-}
-
-.spending-limit {
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .spending-limit.clickable-budget {
   cursor: pointer;
-  border-bottom: 1px dotted rgba(255, 255, 255, 0.4);
-}
-
-.spending-limit.clickable-budget:hover {
-  color: #fff;
-}
-
-.btn-set-budget {
-  all: unset;
-  cursor: pointer;
-  font-size: 10px;
-  color: rgba(76, 195, 138, 0.95);
-  background: rgba(76, 195, 138, 0.12);
-  border: 1px solid rgba(76, 195, 138, 0.25);
-  padding: 1px 6px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
-}
-
-.btn-set-budget:hover {
-  background: rgba(76, 195, 138, 0.25);
-  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .spending-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 4px;
-  font-size: 11px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .spending-balance {
-  color: rgba(76, 195, 138, 0.9);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  color: var(--ink);
 }
 
-.spending-uncapped-text {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 10.5px;
-}
-
-.spending-reset {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-}
-
+/* Actions: one filled button in the accent per view; every other action is
+   underlined text. */
 .btn-usage-settings {
   all: unset;
   cursor: pointer;
+  margin-top: var(--space-2);
   margin-left: auto;
-  font-size: 10.5px;
-  padding: 1px 8px;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(230, 180, 80, 0.12);
-  border: 1px solid rgba(230, 180, 80, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px var(--space-2);
+  color: var(--ground);
+  background: var(--lichen);
+  transition: opacity var(--fast) var(--out);
 }
 
 .btn-usage-settings:hover {
-  color: #fff;
-  background: rgba(230, 180, 80, 0.22);
+  opacity: 0.85;
 }
 
-/* Spots that open the usage settings: a dotted underline and a pencil say
-   "this number can be changed". */
-.edit-limit {
+.btn-usage-settings .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.edit-limit,
+.btn-set-budget {
   all: unset;
   cursor: pointer;
-  border-bottom: 1px dotted rgba(230, 180, 80, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--edge);
+  text-underline-offset: 3px;
+  transition: color var(--fast) var(--out);
 }
 
-.edit-limit:hover {
-  color: #fff;
-  border-bottom-style: solid;
+.edit-limit:hover,
+.btn-set-budget:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
-.spending-limit.edit-limit {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.spending-limit.edit-limit:hover {
-  color: #fff;
-}
-
-.edit-pencil {
-  color: var(--bar-amber);
-  font-size: 10px;
+.edit-limit .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
 }
 
 .btn-usage-settings:focus-visible,
-.edit-limit:focus-visible {
-  outline: 2px solid var(--bar-amber);
-  outline-offset: 2px;
+.edit-limit:focus-visible,
+.btn-set-budget:focus-visible {
+  outline: var(--focus-width) solid var(--lichen);
+  outline-offset: var(--focus-offset);
 }
 
 .spending-status-muted {
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  color: var(--muted);
 }
 
+/* Badges: words in ink, edged in the colour of the state they name. Data
+   colours are for marks; as small text some of them fall below AA. */
 .spending-badge {
-  font-size: 9.5px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--edge);
 }
 
 .badge-uncapped {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--muted);
 }
 
 .badge-warning {
-  background: rgba(230, 180, 80, 0.2);
-  color: var(--bar-amber);
-  border: 1px solid rgba(230, 180, 80, 0.4);
+  border-color: var(--data-ochre);
 }
 
 .badge-limit {
-  background: rgba(229, 83, 75, 0.25);
-  color: var(--bar-red);
-  border: 1px solid rgba(229, 83, 75, 0.5);
-  animation: pulse-limit 2s infinite ease-in-out;
+  border-color: var(--data-rust);
 }
 
-@keyframes pulse-limit {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.spending-section.limit-reached .spending-balance {
-  color: var(--bar-red);
-}
-
+/* Prepaid credits */
 .prepaid-line {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-top: 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  margin-top: var(--space-2);
+  font-size: 12px;
 }
 
 .prepaid-line + .prepaid-line {
-  margin-top: 2px;
-}
-
-.prepaid-paid .prepaid-amount b {
-  color: rgba(255, 255, 255, 0.85);
+  margin-top: var(--space-1);
 }
 
 .prepaid-label {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--muted);
 }
 
 .prepaid-amount {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--muted);
 }
 
 .prepaid-amount b {
-  color: rgba(76, 195, 138, 0.95);
-  font-weight: 600;
-}
-
-.prepaid-total {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 10.5px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 /* Octopus Agile card */
 .agile-now {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--space-2);
 }
 
 .agile-price {
-  font-size: 22px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.15;
 }
 
 .agile-price small {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   margin-left: 2px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.agile-price.low,
-.agile-price.neg {
-  color: var(--bar-green);
+  color: var(--muted);
 }
 
 .agile-cue {
-  font-size: 11px;
-}
-
-.cue-low {
-  color: var(--bar-green);
-}
-
-.cue-high {
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .agile-until {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
 }
 
 .agile-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 999px;
-}
-
-.badge-paid {
-  background: rgba(76, 195, 138, 0.25);
-  color: var(--bar-green);
-  border: 1px solid rgba(76, 195, 138, 0.6);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--data-spruce);
 }
 
 .agile-chart-label {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
+  margin-top: var(--space-3);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agile-chart-label span {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .agile-chart {
   display: block;
   width: 100%;
-  height: 34px;
-  margin-top: 2px;
+  height: 40px;
+  margin-top: var(--space-1);
 }
 
 .agile-bar.bar-high {
-  fill: rgba(255, 255, 255, 0.28);
+  fill: var(--edge);
 }
 
-.agile-bar.bar-low {
-  fill: var(--bar-green);
-}
-
+.agile-bar.bar-low,
 .agile-bar.bar-neg {
-  fill: #7dffc0;
+  fill: var(--data-spruce);
 }
 
 .agile-bar.bar-past {
@@ -604,91 +526,75 @@ body {
 }
 
 .agile-now-col {
-  fill: rgba(255, 255, 255, 0.22);
+  fill: var(--rule);
 }
 
 .agile-zero {
-  stroke: rgba(255, 255, 255, 0.35);
-  stroke-width: 0.4;
+  stroke: var(--muted);
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .agile-windows {
-  margin-top: 6px;
+  margin-top: var(--space-3);
 }
 
 .agile-sub {
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 2px;
+  color: var(--muted);
+  margin-bottom: var(--space-1);
 }
 
 .agile-window {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-size: 12px;
   padding: 1px 0;
-  color: rgba(255, 255, 255, 0.75);
 }
 
 .agile-window-price {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .agile-window.cheapest .agile-window-price {
-  color: var(--bar-green);
-}
-
-.agile-window.live .agile-window-time {
-  color: var(--bar-green);
+  color: var(--ink);
 }
 
 .agile-window em {
   font-style: normal;
-  font-size: 10px;
-  color: var(--bar-green);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  margin-left: var(--space-1);
 }
 
-/* Negative price: glowing, gently pulsing card. */
+/* Negative price: the whole section is edged in the "cheap" data colour; the
+   "Paid to use" label says it in words. */
 .card.negative-price {
-  background: linear-gradient(135deg, rgba(76, 195, 138, 0.18), rgba(76, 195, 138, 0.04));
-  box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.55), 0 0 14px rgba(76, 195, 138, 0.35);
-  animation: pulse-negative 2.4s infinite ease-in-out;
-}
-
-.card.negative-price .agile-badge {
-  animation: pulse-limit 2s infinite ease-in-out;
-}
-
-@keyframes pulse-negative {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.55), 0 0 10px rgba(76, 195, 138, 0.25); }
-  50% { box-shadow: 0 0 0 1px rgba(76, 195, 138, 0.85), 0 0 20px rgba(76, 195, 138, 0.55); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card.negative-price,
-  .card.negative-price .agile-badge {
-    animation: none;
-  }
+  outline: 1px solid var(--data-spruce);
+  outline-offset: -1px;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
 }
 
 .card-error {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--muted);
   font-size: 12px;
-  line-height: 1.4;
-  padding: 8px 0;
+  line-height: 1.55;
+  padding: var(--space-2) 0;
 }
 
 /* Footer */
 #widget-status {
-  padding-top: 6px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--muted);
 }
 
 #widget-status.stale {
-  color: var(--bar-amber);
+  color: var(--ink);
 }
