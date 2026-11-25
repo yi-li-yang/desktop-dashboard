@@ -22,10 +22,7 @@
         "resizable": true,
         "maximizable": false,
         "shadow": false,
-        "visible": false,
-        "windowEffects": {
-          "effects": ["acrylic"]
-        }
+        "visible": false
       }
     ],
     "security": {

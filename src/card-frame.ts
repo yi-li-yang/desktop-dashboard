@@ -1,6 +1,8 @@
 // The box around every card: a title row (click to collapse/expand, drag to
 // reorder) and a body the card's renderer fills. Renderers never see the frame.
 
+import { ICON } from "./icons";
+
 export interface Layout {
   order: string[];
   collapsed: string[];
@@ -22,7 +24,7 @@ export function createFrame(id: string, title: string, collapsed: boolean): Card
   card.classList.toggle("collapsed", collapsed);
   card.innerHTML = `
     <div class="card-head" title="Click to collapse, drag to reorder">
-      <span class="card-chevron">▾</span>
+      <span class="card-chevron">${ICON.chevronDown}</span>
       <span class="card-title"></span>
       <span class="card-meta"></span>
     </div>

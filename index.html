@@ -2,6 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/vp/fonts.css" />
+    <link rel="stylesheet" href="/src/vp/tokens.css" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Desktop Dashboard</title>
@@ -12,8 +14,8 @@
     <div id="widget">
       <header id="widget-header" data-tauri-drag-region>
         <div id="widget-buttons">
-          <button id="btn-refresh" title="Refresh now">&#x21bb;</button>
-          <button id="btn-close" title="Close">&#x2715;</button>
+          <button id="btn-refresh" title="Refresh now" aria-label="Refresh now"></button>
+          <button id="btn-close" title="Close" aria-label="Close"></button>
         </div>
       </header>
       <main id="cards"></main>
