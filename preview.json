@@ -9,7 +9,7 @@
     "waitUrl": "http://localhost:1430/",
     "timeoutMs": 60000
   },
-  "viewport": { "width": 960, "height": 600 },
+  "viewport": { "width": 1152, "height": 720 },
   "deviceScaleFactor": 2,
   "reducedMotion": "reduce",
   "timezoneId": "Europe/London",
