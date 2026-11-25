@@ -1,12 +1,12 @@
 {
   "_edit": "DERIVED — written by auto-generate-preview-image capture. Never edit; the next capture rewrites it.",
   "commit": "c49c1d9a63455e8b6a47d3071e68d16677274cc0",
-  "capturedAt": "2026-11-25T23:17:38.587Z",
+  "capturedAt": "2026-11-25T23:23:22.944Z",
   "url": "http://localhost:1430/docs/preview/preview.html",
   "tool": "0.1.0",
   "image": {
     "file": "docs/preview.webp",
-    "sha256": "a27ed45cde272f38a3cabad7a1268a6d722a886123a6bfcfd5d7f907f44e3d23",
-    "bytes": 45322
+    "sha256": "4cb9817ddc05147e717fb18fe2027ed0ed26bd790abf03c4c53c2c8c2d044388",
+    "bytes": 45424
   }
 }

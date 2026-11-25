@@ -253,7 +253,7 @@ function row(label: string, w: UsageWindow | null): string {
         <span class="usage-name">${label}</span>
         <span class="usage-remaining"><b>${remaining.toFixed(0)}%</b> left</span>
       </div>
-      <div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${barColor(pct)}"></div></div>
+      <div class="usage-bar"><div class="usage-fill" style="width:${pct}%;--fill:${barColor(pct)}"></div></div>
       <div class="usage-reset">${resetHtml}</div>
     </div>`;
 }
@@ -322,7 +322,7 @@ function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
           </div>
         </div>
         <div class="usage-bar">
-          <div class="usage-fill" style="width:${pct}%;background:${isLimitReached ? "var(--data-rust)" : barColor(pct)}"></div>
+          <div class="usage-fill" style="width:${pct}%;--fill:${isLimitReached ? "var(--data-rust)" : barColor(pct)}"></div>
         </div>
         <div class="spending-footer">
           <span class="spending-balance">${balanceFormatted} balance left${rate}</span>
