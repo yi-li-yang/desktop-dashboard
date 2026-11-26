@@ -5,14 +5,16 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+// `cedar_ember=1` asks for the free limit resets block, which is left out otherwise.
+const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 const ORGS_URL: &str = "https://api.anthropic.com/api/oauth/organizations";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 // Claude Code's public OAuth client id (same one the CLI uses).
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-// The endpoint rate-limits unknown user agents aggressively; identify as Claude Code.
-const USER_AGENT: &str = "claude-code/2.0.14";
+// The endpoint rate-limits unknown user agents aggressively, and only fills the
+// free limit resets block for the Claude Code CLI surface; identify as the CLI.
+const USER_AGENT: &str = "claude-cli/2.1.329 (external, cli)";
 // Usage is polled often so the spend indicator reacts quickly; the prepaid
 // balance moves rarely and costs two extra requests, so it refreshes slower
 // and the polls in between reuse the last result.
@@ -22,6 +24,8 @@ const PREPAID_REFRESH: Duration = Duration::from_secs(5 * 60);
 pub struct ClaudeUsageProvider {
     client: reqwest::Client,
     org_uuid: Mutex<Option<String>>,
+    // Plan from the account profile ("max 5x"); fresher than the credentials file.
+    plan: Mutex<Option<String>>,
     ledger: Mutex<Ledger>,
     prepaid_cache: Mutex<Option<(Instant, Value)>>,
 }
@@ -31,6 +35,7 @@ impl ClaudeUsageProvider {
         Self {
             client: reqwest::Client::new(),
             org_uuid: Mutex::new(None),
+            plan: Mutex::new(None),
             ledger: Mutex::new(prepaid_ledger::load()),
             prepaid_cache: Mutex::new(None),
         }
@@ -59,31 +64,9 @@ impl ClaudeUsageProvider {
     /// Fetches the prepaid credit balance. Best-effort: any failure yields
     /// None so the rest of the usage card still renders.
     async fn fetch_prepaid(&self, token: &str) -> Option<Value> {
-        let cached = self.org_uuid.lock().ok()?.clone();
-        let org = match cached {
+        let org = match self.fetch_profile(token).await {
             Some(o) => o,
-            None => {
-                let resp = self
-                    .client
-                    .get(PROFILE_URL)
-                    .bearer_auth(token)
-                    .header("anthropic-beta", "oauth-2025-04-20")
-                    .header("User-Agent", USER_AGENT)
-                    .send()
-                    .await
-                    .ok()?;
-                if !resp.status().is_success() {
-                    return None;
-                }
-                let profile: Value = resp.json().await.ok()?;
-                let uuid = profile["organization"]["uuid"].as_str()?.to_string();
-                // Only ever interpolated into a URL path; reject anything unexpected.
-                if !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-                    return None;
-                }
-                *self.org_uuid.lock().ok()? = Some(uuid.clone());
-                uuid
-            }
+            None => self.org_uuid.lock().ok()?.clone()?,
         };
 
         let credits_raw = self.get_org_json(token, &org, "prepaid/credits").await?;
@@ -97,6 +80,33 @@ impl ClaudeUsageProvider {
             }
         }
         Some(prepaid)
+    }
+
+    /// Reads the account profile: stores the plan and returns the org uuid.
+    async fn fetch_profile(&self, token: &str) -> Option<String> {
+        let resp = self
+            .client
+            .get(PROFILE_URL)
+            .bearer_auth(token)
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let profile: Value = resp.json().await.ok()?;
+        if let (Some(p), Ok(mut g)) = (plan_label(&profile["organization"]), self.plan.lock()) {
+            *g = Some(p);
+        }
+        let uuid = profile["organization"]["uuid"].as_str()?.to_string();
+        // Only ever interpolated into a URL path; reject anything unexpected.
+        if !uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+            return None;
+        }
+        *self.org_uuid.lock().ok()? = Some(uuid.clone());
+        Some(uuid)
     }
 
     async fn get_org_json(&self, token: &str, org: &str, endpoint: &str) -> Option<Value> {
@@ -384,8 +394,33 @@ pub fn prepaid_credits(raw: &Value) -> Option<Value> {
         .and_then(Value::as_f64)
         .map(cents_to_dollars);
 
+    // Promotional (free) credit with a remaining balance; usually expires.
+    let promo: Vec<Value> = raw
+        .get("promo_tranches")
+        .and_then(Value::as_array)
+        .map(|ts| {
+            ts.iter()
+                .filter_map(|t| {
+                    let left = t.get("remaining_amount_minor_units")?.as_f64()?;
+                    if left <= 0.0 {
+                        return None;
+                    }
+                    Some(json!({
+                        "label": t.get("name").and_then(Value::as_str).unwrap_or("Promo credit"),
+                        "left": cents_to_dollars(left),
+                        "total": t.get("granted_amount_minor_units").and_then(Value::as_f64).map(cents_to_dollars),
+                        "utilization": Value::Null,
+                        "resets_at": Value::Null,
+                        "ends_at": t.get("expires_at").cloned().unwrap_or(Value::Null),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(json!({
         "balance": cents_to_dollars(balance_cents),
+        "free_credits": promo,
         "active_credit": active_cents.map(cents_to_dollars),
         "auto_reload": auto_enabled,
         "reload_threshold": reload_threshold,
@@ -418,6 +453,149 @@ fn seven_day_breakdown(raw: &Value) -> Option<Value> {
     }
 }
 
+/// Plan badge text from the profile's organization, e.g. "max 5x".
+fn plan_label(org: &Value) -> Option<String> {
+    let tier = org.get("rate_limit_tier").and_then(Value::as_str).unwrap_or("");
+    for (key, label) in [("max_20x", "max 20x"), ("max_5x", "max 5x")] {
+        if tier.contains(key) {
+            return Some(label.into());
+        }
+    }
+    let kind = org.get("organization_type").and_then(Value::as_str)?;
+    Some(kind.strip_prefix("claude_").unwrap_or(kind).replace('_', " "))
+}
+
+/// Model- or surface-scoped weekly limits from the `limits` list (e.g. Fable),
+/// with the share of the weekly limit each one may use.
+fn scoped_limits(raw: &Value) -> Option<Value> {
+    let limits = raw.get("limits")?.as_array()?;
+    let shares = raw.get("weekly_scoped_shares").and_then(Value::as_array);
+    let name_of = |v: &Value| -> Option<String> {
+        match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Object(_) => v
+                .get("display_name")
+                .or_else(|| v.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        }
+    };
+    let rows: Vec<Value> = limits
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.get("kind").and_then(Value::as_str) == Some("weekly_scoped"))
+        .filter_map(|(i, l)| {
+            let scope = l.get("scope")?;
+            let name = scope
+                .get("model")
+                .and_then(name_of)
+                .or_else(|| scope.get("surface").and_then(name_of))?;
+            let pct = l.get("percent").and_then(Value::as_f64)?;
+            let share = shares.and_then(|s| {
+                s.iter()
+                    .find(|x| x.get("limit_index").and_then(Value::as_u64) == Some(i as u64))
+            });
+            let share_f = |k: &str| share.and_then(|x| x.get(k)).and_then(Value::as_f64);
+            Some(json!({
+                "name": name,
+                "utilization": pct,
+                "resets_at": l.get("resets_at").cloned().unwrap_or(Value::Null),
+                "allowance_pct": share_f("allowance_percent_of_weekly"),
+                "used_pct_of_weekly": share_f("used_percent_of_weekly"),
+            }))
+        })
+        .collect();
+    if rows.is_empty() { None } else { Some(json!(rows)) }
+}
+
+/// Free limit resets still available (the `cedar_ember` block). None when
+/// the account has none left or isn't eligible.
+fn free_resets(raw: &Value) -> Option<Value> {
+    let ce = raw.get("cedar_ember")?;
+    if ce.get("eligible").and_then(Value::as_bool) != Some(true) {
+        return None;
+    }
+    let grants: Vec<Value> = ce
+        .get("grants")?
+        .as_array()?
+        .iter()
+        .filter_map(|g| {
+            let left = g.get("resets_left").and_then(Value::as_u64)?;
+            if left == 0 || g.get("paused").and_then(Value::as_bool) == Some(true) {
+                return None;
+            }
+            let id = g.get("id").and_then(Value::as_str).unwrap_or("");
+            let label = g.get("label").and_then(Value::as_str).unwrap_or("");
+            // Fable resets free only what Fable used; the rest refill every limit.
+            let kind = if format!("{id} {label}").to_lowercase().contains("fable") {
+                "Fable"
+            } else {
+                match g.get("type").and_then(Value::as_str) {
+                    Some("session") => "session",
+                    Some("weekly") => "weekly",
+                    _ => "full",
+                }
+            };
+            Some(json!({
+                "label": label,
+                "kind": kind,
+                "left": left,
+                "usable_now": g.get("usable_now").and_then(Value::as_bool).unwrap_or(false),
+                "ends_at": g.get("ends_at").cloned().unwrap_or(Value::Null),
+            }))
+        })
+        .collect();
+    if grants.is_empty() { None } else { Some(json!(grants)) }
+}
+
+/// Free credit programs on the usage response (Claude Code and Cowork
+/// credit, labelled credits and promotional credits).
+fn free_credits(raw: &Value) -> Option<Value> {
+    let item = |v: &Value, fallback: &str| -> Option<Value> {
+        if !v.is_object() {
+            return None;
+        }
+        let label = v
+            .get("label")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(fallback);
+        let limit = v.get("limit_dollars").and_then(Value::as_f64);
+        let used = v.get("used_dollars").and_then(Value::as_f64);
+        let left = v
+            .get("remaining_dollars")
+            .and_then(Value::as_f64)
+            .or_else(|| Some((limit? - used.unwrap_or(0.0)).max(0.0)));
+        Some(json!({
+            "label": label,
+            "left": left,
+            "total": limit,
+            "utilization": v.get("utilization").and_then(Value::as_f64),
+            // A weekly credit (e.g. Claude Duet's) refills at resets_at and
+            // stops at offer_ends_at.
+            "resets_at": v.get("resets_at").cloned().unwrap_or(Value::Null),
+            "ends_at": v.get("offer_ends_at").or_else(|| v.get("ends_at")).cloned().unwrap_or(Value::Null),
+        }))
+    };
+    let mut out = Vec::new();
+    if let Some(v) = raw.get("cinder_cove").and_then(|v| item(v, "Claude Code and Cowork credit")) {
+        out.push(v);
+    }
+    if let Some(v) = raw.get("wattle_ember").and_then(|v| item(v, "Credit")) {
+        out.push(v);
+    }
+    if let Some(list) = raw.get("promo_credits").and_then(Value::as_array) {
+        // The Fable launch promo is the Fable weekly limit, shown with the limits.
+        out.extend(
+            list.iter()
+                .filter(|p| p.get("program_id").and_then(Value::as_str) != Some("model_promo_fable"))
+                .filter_map(|p| item(p, "Promo credit")),
+        );
+    }
+    if out.is_empty() { None } else { Some(json!(out)) }
+}
+
 /// Converts the raw endpoint payload into the stable shape the frontend renders.
 pub fn normalize(raw: &Value) -> Value {
     json!({
@@ -425,7 +603,10 @@ pub fn normalize(raw: &Value) -> Value {
         "weekly": window(raw, "seven_day"),
         "weekly_opus": window(raw, "seven_day_opus"),
         "weekly_sonnet": window(raw, "seven_day_sonnet"),
+        "scoped": scoped_limits(raw),
         "breakdown": seven_day_breakdown(raw),
+        "free_resets": free_resets(raw),
+        "free_credits": free_credits(raw),
         "extra_usage": extra_usage(raw),
         "plan": raw.get("subscriptionType")
             .or_else(|| raw.get("rate_limit_tier"))
@@ -464,6 +645,9 @@ impl StatProvider for ClaudeUsageProvider {
                     .map_err(|e| ProviderError::Other(format!("Bad response: {e}")))?;
                 let mut data = normalize(&raw);
                 data["prepaid"] = self.prepaid(&token).await;
+                if let Some(p) = self.plan.lock().ok().and_then(|g| g.clone()) {
+                    data["plan"] = json!(p);
+                }
                 if data["plan"].is_null() {
                     // The usage response doesn't always carry the plan; the
                     // credentials file does.
@@ -671,6 +855,84 @@ mod tests {
     #[test]
     fn prepaid_credits_missing_balance_is_none() {
         assert!(prepaid_credits(&json!({"tranches": []})).is_none());
+    }
+
+    #[test]
+    fn normalize_scoped_resets_and_credits() {
+        let raw = json!({
+            "limits": [
+                {"kind": "weekly_all", "percent": 29, "resets_at": "2026-12-01T22:00:00Z", "scope": null},
+                {"kind": "weekly_scoped", "percent": 4, "resets_at": "2026-12-01T22:00:00Z",
+                 "scope": {"model": {"id": null, "display_name": "Fable"}, "surface": null}}
+            ],
+            "weekly_scoped_shares": [{"limit_index": 1, "allowance_percent_of_weekly": 50, "used_percent_of_weekly": 2}],
+            "cedar_ember": {
+                "eligible": true,
+                "grants": [
+                    {"id": "full-reset-2611", "label": "One full limit reset", "resets_left": 0, "type": "full"},
+                    {"id": "free_reset_oct_2026", "label": "Free limit reset", "resets_left": 1,
+                     "type": "full", "usable_now": true, "ends_at": "2026-12-16T04:59:00+00:00"},
+                    {"id": "launch-2610-fable", "label": "New model launch: one Fable reset", "resets_left": 1,
+                     "type": "full", "paused": false, "ends_at": "2027-03-09T07:59:00+00:00"}
+                ]
+            },
+            "cinder_cove": {"utilization": 20.0, "resets_at": null, "limit_dollars": 50.0, "used_dollars": 10.0},
+            "promo_credits": [
+                {"program_id": "model_promo_fable", "label": "Fable promo", "utilization": 1.0},
+                {"program_id": "p1", "label": "Welcome credit", "utilization": 0.0, "resets_at": "2026-12-01T22:00:00Z",
+                 "offer_ends_at": "2027-01-01T07:59:00Z"}
+            ]
+        });
+        let n = normalize(&raw);
+        let sc = n["scoped"].as_array().unwrap();
+        assert_eq!(sc.len(), 1);
+        assert_eq!(sc[0]["name"], "Fable");
+        assert_eq!(sc[0]["utilization"], 4.0);
+        assert_eq!(sc[0]["allowance_pct"], 50.0);
+        assert_eq!(sc[0]["used_pct_of_weekly"], 2.0);
+
+        let fr = n["free_resets"].as_array().unwrap();
+        assert_eq!(fr.len(), 2);
+        assert_eq!(fr[0]["kind"], "full");
+        assert_eq!(fr[0]["usable_now"], true);
+        assert_eq!(fr[1]["kind"], "Fable");
+
+        let fc = n["free_credits"].as_array().unwrap();
+        assert_eq!(fc.len(), 2);
+        assert_eq!(fc[0]["label"], "Claude Code and Cowork credit");
+        assert_eq!(fc[0]["left"], 40.0);
+        assert_eq!(fc[1]["label"], "Welcome credit");
+        assert_eq!(fc[1]["left"], Value::Null);
+        assert_eq!(fc[1]["resets_at"], "2026-12-01T22:00:00Z");
+        assert_eq!(fc[1]["ends_at"], "2027-01-01T07:59:00Z");
+    }
+
+    #[test]
+    fn free_resets_none_when_ineligible() {
+        let raw = json!({"cedar_ember": {"eligible": false, "grants": []}});
+        assert_eq!(normalize(&raw)["free_resets"], Value::Null);
+    }
+
+    #[test]
+    fn plan_label_reads_max_tier() {
+        let org = json!({"organization_type": "claude_max", "rate_limit_tier": "default_claude_max_5x"});
+        assert_eq!(plan_label(&org).unwrap(), "max 5x");
+        let pro = json!({"organization_type": "claude_pro", "rate_limit_tier": "default_claude_ai"});
+        assert_eq!(plan_label(&pro).unwrap(), "pro");
+    }
+
+    #[test]
+    fn prepaid_lists_promo_tranches() {
+        let raw = json!({"amount": 1000, "promo_tranches": [
+            {"remaining_amount_minor_units": 500, "granted_amount_minor_units": 1000,
+             "expires_at": "2027-01-01T00:00:00Z", "name": "Gift"},
+            {"remaining_amount_minor_units": 0}
+        ]});
+        let p = prepaid_credits(&raw).unwrap();
+        let fc = p["free_credits"].as_array().unwrap();
+        assert_eq!(fc.len(), 1);
+        assert_eq!(fc[0]["left"], 5.0);
+        assert_eq!(fc[0]["label"], "Gift");
     }
 
     #[test]

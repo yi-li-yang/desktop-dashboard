@@ -9,6 +9,8 @@ import {
 } from "./cards/claude-usage";
 import { renderOctopusAgile, tickAgile } from "./cards/octopus-agile";
 import { createFrame, readLayout, wireInteractions, type CardFrame, type Layout } from "./card-frame";
+import { initTooltips } from "./tooltip";
+import { monoNumbers } from "./num";
 
 // Card registry: provider id -> how to show it. Add new stats here. Each card
 // is drawn inside its own box (see card-frame.ts); `render` fills the body,
@@ -86,6 +88,7 @@ function updateStatus(): void {
   const ageMin = Math.floor((Date.now() - oldest) / 60_000);
   statusEl.textContent =
     ageMin <= 1 ? "updated just now" : `updated ${ageMin}m ago`;
+  monoNumbers(statusEl);
   statusEl.classList.toggle("stale", ageMin >= 15);
 }
 
@@ -97,6 +100,7 @@ function handlePayload(id: string, payload: AnyPayload): void {
   frame.card.hidden = false;
   if (payload.ok) {
     frame.meta.textContent = def.meta?.(payload) ?? "";
+    monoNumbers(frame.meta);
     lastFetched[id] = payload.fetched_at;
   }
   if (!payload.ok && payload.error) {
@@ -132,6 +136,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Create every box up front so on-screen order follows the saved layout, not
   // whichever provider answers first.
   await buildFrames();
+  initTooltips();
   watchClaudeActivity(frames["claude-usage"].body);
 
   for (const id of Object.keys(CARDS)) {
