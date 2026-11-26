@@ -3,13 +3,15 @@
 ![desktop-dashboard preview: the widget in its dark and light themes, with Claude usage (session and weekly quota bars, extra spending, prepaid credits) above Octopus Agile (current price, half-hourly bar chart, below-average windows). All data is invented.](docs/preview.webp)
 
 A small desktop widget (Tauri v2) made of independent sections: live Claude Code usage
-(session and weekly quota remaining, with reset countdowns, spending and prepaid credits) and today's Octopus Agile electricity prices.
+(session, weekly and model-scoped quota such as Fable, with reset countdowns; free limit resets and free credits; spending and prepaid credits) and today's Octopus Agile electricity prices.
 
 ## How it works
 
 - Reads the OAuth token Claude Code stores in `~/.claude/.credentials.json` (login with `claude` first).
 - Polls the same endpoint that powers Claude Code's `/usage` (`GET https://api.anthropic.com/api/oauth/usage`) every 5 minutes, with exponential backoff on rate limits (the endpoint is undocumented and strict about polling).
+- Asks that endpoint with `?cedar_ember=1` and the Claude Code CLI user agent; without both, it leaves out the free limit resets. The plan badge (for example `max 5x`) comes from the account profile, because the plan stored in the credentials file can be out of date after an upgrade.
 - Also shows today's (and, once published, tomorrow's) Octopus Agile half-hourly prices for region C (London; `REGION` in `octopus_agile.rs`) from the public Octopus API (no key): the current price, below-average windows, and a "Paid to use" label with an edged section when the price is negative.
+- Hover over a row in the Claude box to see what it counts (which models and which apps), when it resets, and what happens at the limit.
 - The Claude box's **Extra Spending** row shows this month's usage credit spend, also while credits are off, and opens claude.ai's usage settings (see below).
 - Every block is its own section with a title row. **Click the title to collapse** the box to just its title (click again to expand), and **drag the title up or down to reorder** the boxes. Order and collapsed state are saved in `settings.json` and restored on launch.
 - Frameless window on a matte surface at 96% opacity; drag it anywhere by the header — position is remembered. Dark by default; light follows the system setting.

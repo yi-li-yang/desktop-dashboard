@@ -4,6 +4,8 @@
 
 import { invoke } from "../ipc";
 import { ICON } from "../icons";
+import { tipHtml } from "../tooltip";
+import { monoNumbers } from "../num";
 
 export interface UsageWindow {
   utilization: number;
@@ -20,8 +22,35 @@ export interface ExtraUsageData {
   resets_at: string | null;
 }
 
+/** A model- or surface-scoped weekly limit, e.g. Fable. */
+export interface ScopedLimit {
+  name: string;
+  utilization: number;
+  resets_at: string | null;
+  allowance_pct: number | null; // share of the weekly limit it may use
+  used_pct_of_weekly?: number | null; // how much of the weekly limit it has used
+}
+
+export interface FreeReset {
+  label: string;
+  kind: string; // "full" | "session" | "weekly" | "Fable"
+  left: number;
+  usable_now: boolean;
+  ends_at: string | null;
+}
+
+export interface FreeCredit {
+  label: string;
+  left: number | null;
+  total: number | null;
+  utilization: number | null;
+  resets_at: string | null; // a credit that refills, e.g. weekly
+  ends_at: string | null; // when the credit or its offer ends
+}
+
 export interface PrepaidData {
   balance: number;
+  free_credits?: FreeCredit[];
   active_credit: number | null;
   credit_seen: number;
   credit_added: number;
@@ -43,7 +72,10 @@ export interface ClaudeUsageData {
   weekly: UsageWindow | null;
   weekly_opus: UsageWindow | null;
   weekly_sonnet: UsageWindow | null;
+  scoped?: ScopedLimit[] | null;
   breakdown: BreakdownItem[] | null;
+  free_resets?: FreeReset[] | null;
+  free_credits?: FreeCredit[] | null;
   extra_usage: ExtraUsageData | null;
   prepaid: PrepaidData | null;
   plan: string | null;
@@ -105,6 +137,7 @@ function observeAll(d: ClaudeUsageData, at: number): void {
     ["Weekly", d.weekly],
     ["Weekly · Sonnet", d.weekly_sonnet],
     ["Weekly · Opus", d.weekly_opus],
+    ...scopedRows(d).map((s): [string, UsageWindow] => [`Weekly · ${s.name}`, s]),
   ];
   for (const [key, w] of windows) {
     if (w) observe(key, w.utilization, at, "pct");
@@ -232,13 +265,41 @@ function formatMonthlyReset(resetsAt: string | null): string {
   return `Resets ${mName} ${day} (${rel})`;
 }
 
-function row(label: string, w: UsageWindow | null): string {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function shortDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+/** Scoped weekly limits that the named weekly_sonnet / weekly_opus windows don't already show. */
+function scopedRows(d: ClaudeUsageData): ScopedLimit[] {
+  return (d.scoped ?? []).filter((s) => {
+    const n = s.name.toLowerCase();
+    return !((n === "sonnet" && d.weekly_sonnet) || (n === "opus" && d.weekly_opus));
+  });
+}
+
+/**
+ * One quota bar. `sub` replaces the ticking reset countdown with fixed text
+ * (used when a row shares the weekly reset, so the same countdown isn't repeated).
+ */
+function row(label: string, w: UsageWindow | null, opts: { sub?: string; tip?: string } = {}): string {
   if (!w) return "";
   const pct = Math.min(100, Math.max(0, w.utilization));
   const remaining = Math.max(0, 100 - pct);
 
   let resetHtml = "";
-  if (w.resets_at) {
+  if (opts.sub) {
+    resetHtml = opts.sub;
+  } else if (w.resets_at) {
     resetHtml = countdown(w.resets_at);
   } else if (pct <= 0) {
     resetHtml = `<span class="usage-ready">Ready · 100% available</span>`;
@@ -248,7 +309,7 @@ function row(label: string, w: UsageWindow | null): string {
   if (rise) resetHtml = rateHtml(rise, !!resetHtml) + resetHtml;
 
   return `
-    <div class="usage-row${rise ? " burning" : ""}" data-resets="${w.resets_at ?? ""}">
+    <div class="usage-row${rise ? " burning" : ""}" data-resets="${opts.sub ? "" : (w.resets_at ?? "")}"${opts.tip ? ` data-tip="${escapeHtml(opts.tip)}"` : ""}>
       <div class="usage-labels">
         <span class="usage-name">${label}</span>
         <span class="usage-remaining"><b>${remaining.toFixed(0)}%</b> left</span>
@@ -263,7 +324,10 @@ function renderBreakdown(items: BreakdownItem[] | null | undefined): string {
   const chips = items
     .map((item) => `<span class="breakdown-chip">${item.name} <b>${item.percent}%</b></span>`)
     .join("");
-  return `<div class="breakdown-chips">${chips}</div>`;
+  const tip = tipHtml("Where this week's use came from", [
+    ["Counts", "Share of Weekly use, by app."],
+  ]);
+  return `<div class="breakdown-chips" data-tip="${escapeHtml(tip)}">${chips}</div>`;
 }
 
 function renderExtraUsage(eu: ExtraUsageData | null | undefined): string {
@@ -380,45 +444,136 @@ function wireUsageSettings(container: HTMLElement): void {
   container.querySelectorAll(".btn-usage-settings, .edit-limit").forEach((el) => el.addEventListener("click", open));
 }
 
+/** A one-line "label · value" pair; the label truncates so the value never wraps. */
+function kv(label: string, value: string, opts: { tip?: string; cls?: string } = {}): string {
+  return `
+    <div class="kv-line${opts.cls ? ` ${opts.cls}` : ""}"${opts.tip ? ` data-tip="${escapeHtml(opts.tip)}"` : ""}>
+      <span class="kv-label">${label}</span>
+      <span class="kv-value">${value}</span>
+    </div>`;
+}
+
+// ---- Hover explanations: what each limit counts, when it resets, and what
+// happens when it runs out. Shown by tooltip.ts.
+
+const ALL_SURFACES = "Claude Code, Cowork, claude.ai and the apps";
+
+/** "Monday at 22:00" for a weekly reset time. */
+function weeklyWhen(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "week";
+  const day = d.toLocaleDateString("en-GB", { weekday: "long" });
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${day} at ${time}`;
+}
+
+/** Tip for a weekly limit on one model (Sonnet, Opus, Fable). `name` is escaped HTML. */
+function modelTip(name: string, allowance: number | null, usedOfWeekly: number | null): string {
+  const rows: [string, string][] = [
+    ["Counts", `Only ${name}, in every app. Also counts toward Weekly${allowance != null ? ` (max ${allowance}% of it)` : ""}.`],
+  ];
+  if (allowance != null && usedOfWeekly != null) {
+    rows.push(["Used", `${usedOfWeekly}% of Weekly, of its ${allowance}%.`]);
+  }
+  rows.push(["Resets", "With Weekly."]);
+  rows.push(["At limit", `${name} waits; other models carry on.`]);
+  return tipHtml(`Weekly · ${name}`, rows);
+}
+
+function freeResetsTip(resets: FreeReset[]): string {
+  const kinds = new Set(resets.map((r) => r.kind));
+  const rows: [string, string][] = [];
+  if (kinds.has("full")) rows.push(["Full", "Refills session and weekly now. Reset day unchanged."]);
+  if (kinds.has("Fable")) rows.push(["Fable", "Frees Fable's use this week, refills the session."]);
+  if (kinds.has("session")) rows.push(["Session", "Refills the 5-hour session limit."]);
+  if (kinds.has("weekly")) rows.push(["Weekly", "Refills the weekly limit."]);
+  rows.push(["Use", "/limit-reset in Claude Code. One use each."]);
+  rows.push([
+    "Use by",
+    resets
+      .filter((r) => r.ends_at)
+      .map((r) => `${r.left} ${r.kind}: ${shortDate(r.ends_at)}`)
+      .join(" · "),
+  ]);
+  return tipHtml("Free resets", rows);
+}
+
+function spendingTip(eu: ExtraUsageData | null | undefined): string {
+  return tipHtml("Extra spending", [
+    ["Counts", "Use past plan limits, paid from usage credits."],
+    ["Now", eu?.is_enabled ? "On: carries on, up to the monthly limit." : "Off: stops at a limit until it resets."],
+    ["Resets", "Spend total restarts monthly."],
+  ]);
+}
+
+/** Free limit resets and free credit programs, in one section. */
+function renderFree(d: ClaudeUsageData): string {
+  let html = "";
+
+  const resets = d.free_resets ?? [];
+  if (resets.length) {
+    const total = resets.reduce((n, r) => n + r.left, 0);
+    // "1 full · 3 Fable": counts by kind, full resets first.
+    const byKind = new Map<string, number>();
+    for (const r of resets) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + r.left);
+    const kinds = [...byKind.entries()]
+      .sort(([a], [b]) => (a === "full" ? -1 : b === "full" ? 1 : 0))
+      .map(([k, n]) => `${n} ${k}`)
+      .join(" · ");
+    const firstEnd = resets
+      .map((r) => r.ends_at)
+      .filter((e): e is string => !!e)
+      .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+    const tip = freeResetsTip(resets);
+    html += kv("Free resets", `<b>${total}</b> left`, { tip, cls: "kv-head" });
+    html += `<div class="kv-sub">${kinds}${firstEnd ? ` · next expires ${shortDate(firstEnd)}` : ""}</div>`;
+  }
+
+  const credits = [...(d.free_credits ?? []), ...(d.prepaid?.free_credits ?? [])];
+  for (const c of credits) {
+    const value =
+      c.left != null
+        ? `<b>${money(c.left)}</b> left`
+        : c.utilization != null
+          ? `<b>${Math.max(0, 100 - c.utilization).toFixed(0)}%</b> left`
+          : "";
+    const of = c.total != null && c.left != null ? ` of ${money(c.total)}` : "";
+    html += kv(escapeHtml(c.label), value, {
+      tip: tipHtml(escapeHtml(c.label), [
+        ["Counts", "Free credit; used before your plan limits where it applies."],
+        ...(c.left != null ? ([["Left", `${money(c.left)}${of}`]] as [string, string][]) : []),
+        ...(c.resets_at ? ([["Resets", `${weeklyWhen(c.resets_at)}; unused credit lapses.`]] as [string, string][]) : []),
+        ...(c.ends_at ? ([["Ends", shortDate(c.ends_at)]] as [string, string][]) : []),
+      ]),
+    });
+  }
+
+  return html ? `<div class="card-section">${html}</div>` : "";
+}
+
+/** Prepaid credit: the usable total, and what was paid for bundles this month. */
 function renderPrepaid(p: PrepaidData | null | undefined): string {
   if (!p) return "";
-
-  const money = (n: number) => `$${n.toFixed(2)}`;
-  const since =
-    p.tracking_since_ms != null
-      ? new Date(p.tracking_since_ms).toLocaleDateString([], { month: "short", day: "numeric" })
-      : null;
-
-  const tips: string[] = [];
-  if (since) {
-    tips.push(
-      `Credit seen since ${since}: ${money(p.credit_seen)} (${money(p.credit_added)} added since tracking began)`,
-    );
+  const reload =
+    p.auto_reload && p.reload_threshold != null && p.reload_to != null
+      ? `Auto-reload to ${money(p.reload_to)} below ${money(p.reload_threshold)}`
+      : undefined;
+  let html = kv("Prepaid credits", `<b>${money(p.balance)}</b>`, {
+    tip: tipHtml("Prepaid credits", [
+      ["Counts", "Credit bought ahead; pays for extra usage."],
+      ["Shows", "The whole spendable balance."],
+      ...(reload ? ([["Reload", reload]] as [string, string][]) : []),
+    ]),
+  });
+  if (p.paid_this_month != null) {
+    html += kv("Paid this month", `<b>${money(p.paid_this_month)}</b>`, {
+      tip: tipHtml("Paid this month", [
+        ["Counts", "Paid for credit bundles this month."],
+        ["Note", "Bundles are discounted: more credit than you pay."],
+      ]),
+    });
   }
-  if (p.auto_reload && p.reload_threshold != null && p.reload_to != null) {
-    tips.push(`Auto-reload to ${money(p.reload_to)} below ${money(p.reload_threshold)}`);
-  }
-  const title = tips.length ? ` title="${tips.join(" · ")}"` : "";
-
-  const active =
-    p.active_credit != null && p.active_credit > 0
-      ? `<span class="prepaid-total">of ${money(p.active_credit)} active</span>`
-      : "";
-
-  const paid =
-    p.paid_this_month != null
-      ? `
-    <div class="prepaid-line prepaid-paid" title="Dollars actually paid for credit bundles (bundles are discounted, so this is less than the credit received). Tracked total sums every month seen${since ? ` since ${since}` : ""}.">
-      <span class="prepaid-label">Paid this month</span>
-      <span class="prepaid-amount"><b>${money(p.paid_this_month)}</b> <span class="prepaid-total">· ${money(p.paid_tracked)} tracked</span></span>
-    </div>`
-      : "";
-
-  return `
-    <div class="prepaid-line"${title}>
-      <span class="prepaid-label">Prepaid credits</span>
-      <span class="prepaid-amount"><b>${money(p.balance)}</b> left ${active}</span>
-    </div>${paid}`;
+  return `<div class="prepaid-block">${html}</div>`;
 }
 
 export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload): void {
@@ -432,18 +587,48 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
   const d = payload.data!;
   observeAll(d, payload.fetched_at);
 
-  let html = row("Session (5h)", d.session);
-  html += row("Weekly", d.weekly);
+  const blocked = d.extra_usage?.is_enabled
+    ? "Usage credits take over, up to the monthly limit."
+    : "Claude waits for the reset, or use a free reset.";
+  let html = row("Session (5h)", d.session, {
+    tip: tipHtml("Session (5h)", [
+      ["Counts", `All use: ${ALL_SURFACES}. Every model.`],
+      ["Resets", "5 hours after the session's first message."],
+      ["At limit", blocked],
+    ]),
+  });
+  html += row("Weekly", d.weekly, {
+    tip: tipHtml("Weekly", [
+      ["Counts", `All use: ${ALL_SURFACES}. Every model, Fable and Sonnet too.`],
+      ["Resets", d.weekly?.resets_at ? `Every ${weeklyWhen(d.weekly.resets_at)}.` : "Once a week."],
+      ["At limit", blocked],
+    ]),
+  });
   if (d.breakdown) {
     html += renderBreakdown(d.breakdown);
   }
-  if (d.weekly_sonnet) html += row("Weekly · Sonnet", d.weekly_sonnet);
-  if (d.weekly_opus) html += row("Weekly · Opus", d.weekly_opus);
-
-  const spendingHtml = renderExtraUsage(d.extra_usage);
-  if (spendingHtml) {
-    html += spendingHtml;
+  if (d.weekly_sonnet) html += row("Weekly · Sonnet", d.weekly_sonnet, { tip: modelTip("Sonnet", null, null) });
+  if (d.weekly_opus) html += row("Weekly · Opus", d.weekly_opus, { tip: modelTip("Opus", null, null) });
+  for (const s of scopedRows(d)) {
+    // A scoped limit resets with the weekly one; say how much of it it may use
+    // instead of repeating the same countdown.
+    const sameReset =
+      s.resets_at != null &&
+      d.weekly?.resets_at != null &&
+      Math.abs(Date.parse(s.resets_at) - Date.parse(d.weekly.resets_at)) < 120_000;
+    const sub = sameReset
+      ? s.allowance_pct != null ? `max ${s.allowance_pct}% of weekly` : "resets with weekly"
+      : undefined;
+    const tip = modelTip(escapeHtml(s.name), s.allowance_pct, s.used_pct_of_weekly ?? null);
+    html += row(`Weekly · ${escapeHtml(s.name)}`, s, { sub, tip });
   }
+
+  html += renderFree(d);
+  // The tip covers the whole section; its buttons keep their own tooltips.
+  html += renderExtraUsage(d.extra_usage).replace(
+    'class="spending-section',
+    `data-tip="${escapeHtml(spendingTip(d.extra_usage))}" class="spending-section`,
+  );
   html += renderPrepaid(d.prepaid);
 
   container.innerHTML = html || `<div class="card-error">No usage data returned</div>`;
@@ -464,6 +649,7 @@ export function renderClaudeUsage(container: HTMLElement, payload: StatsPayload)
     });
   });
   wireUsageSettings(container);
+  monoNumbers(container);
   applyLocalActivity(container);
 }
 
@@ -475,6 +661,7 @@ export function tickCountdowns(container: HTMLElement): void {
     if (el && resets) {
       const rate = el.querySelector<HTMLElement>(".usage-rate:not(.usage-rate-local)");
       el.innerHTML = (rate ? rate.outerHTML : "") + countdown(resets);
+      monoNumbers(el);
     }
   });
 

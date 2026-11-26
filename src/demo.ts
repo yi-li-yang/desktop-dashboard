@@ -21,11 +21,28 @@ function claudeUsage(now: number): ClaudeUsageData {
   nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1, 1);
   nextMonth.setUTCHours(0, 0, 0, 0);
   return {
-    plan: "max",
+    plan: "max 5x",
     session: { utilization: 38, resets_at: iso(now + 2 * HOUR + 14 * MIN) },
     weekly: { utilization: 61, resets_at: iso(now + 3 * 24 * HOUR + 5 * HOUR) },
     weekly_sonnet: { utilization: 44, resets_at: iso(now + 3 * 24 * HOUR + 5 * HOUR) },
     weekly_opus: null,
+    scoped: [
+      { name: "Fable", utilization: 12, resets_at: iso(now + 3 * 24 * HOUR + 5 * HOUR), allowance_pct: 50 },
+    ],
+    free_resets: [
+      { label: "Free limit reset", kind: "full", left: 1, usable_now: true, ends_at: iso(now + 20 * 24 * HOUR) },
+      { label: "New model launch: one Fable reset", kind: "Fable", left: 2, usable_now: true, ends_at: iso(now + 90 * 24 * HOUR) },
+    ],
+    free_credits: [
+      {
+        label: "Claude Duet credit",
+        left: 212.4,
+        total: 300,
+        utilization: 29,
+        resets_at: iso(now + 4 * 24 * HOUR),
+        ends_at: iso(now + 35 * 24 * HOUR),
+      },
+    ],
     breakdown: [
       { name: "Claude Code", percent: 74 },
       { name: "Chats", percent: 26 },
@@ -45,7 +62,7 @@ function claudeUsage(now: number): ClaudeUsageData {
       credit_seen: 50,
       credit_added: 0,
       tracking_since_ms: now - 40 * 24 * HOUR,
-      paid_this_month: null,
+      paid_this_month: 45,
       paid_tracked: 0,
       auto_reload: false,
       reload_threshold: null,
